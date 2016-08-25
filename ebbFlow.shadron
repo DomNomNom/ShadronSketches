@@ -1,0 +1,83 @@
+#include "hsv.lib.shadron"
+
+glsl const vec4 ORANGE = vec4(1.0, 0.5, 0.0, 1.0);
+
+// Speed of the simulation (steps per second)
+param float fps = 30.0 : logrange(1.0, 1024.0);
+param float period = 1.0 : logrange(0.1, 10);
+glsl float frameStep = 1.0 / (fps * period);  // adds to 1 over the course of the period.
+
+param float alphaThreshold = 1.0;// : logrange(0.1, 1);
+
+param float colorIntensity = 0.8;
+
+
+
+// The input file
+image InitialState = file();
+
+// Sampling the initial state image, thresholding the color to black or white
+glsl vec4 initialize(vec2 pos) {
+    return texture(InitialState, pos);
+}
+
+
+
+glsl {
+    // a function to fold two pixel colors together in a fun way
+    vec4 reduceNeighbours(vec4 x, vec4 y) {
+        if (x.a >= alphaThreshold) return x;
+        if (x.a >= y.a) return x;
+        y.a -= frameStep;
+        return y;
+    }
+}
+
+// feedback
+glsl vec4 runFeedback(sampler2D prev, vec2 pos, float deltaTime) {
+    vec4 self = texture(prev, pos);
+    vec4 original = texture(InitialState, pos);
+    vec4 put = self; // output
+
+    // // Sample and count neighbors
+    vec4 n0 = texture(prev, pos + vec2(-1.0, -1.0)*shadron_PixelSize);
+    vec4 n1 = texture(prev, pos + vec2( 0.0, -1.0)*shadron_PixelSize);
+    vec4 n2 = texture(prev, pos + vec2(+1.0, -1.0)*shadron_PixelSize);
+    vec4 n3 = texture(prev, pos + vec2(-1.0,  0.0)*shadron_PixelSize);
+    vec4 n4 = texture(prev, pos + vec2(+1.0,  0.0)*shadron_PixelSize);
+    vec4 n5 = texture(prev, pos + vec2(-1.0, +1.0)*shadron_PixelSize);
+    vec4 n6 = texture(prev, pos + vec2( 0.0, +1.0)*shadron_PixelSize);
+    vec4 n7 = texture(prev, pos + vec2(+1.0, +1.0)*shadron_PixelSize);
+
+    // reduce over neighbours
+    vec4 r = put;
+    r = reduceNeighbours(r,  n0);
+    r = reduceNeighbours(r,  n1);
+    r = reduceNeighbours(r,  n1);
+    r = reduceNeighbours(r,  n2);
+    r = reduceNeighbours(r,  n3);
+    r = reduceNeighbours(r,  n4);
+    r = reduceNeighbours(r,  n5);
+    r = reduceNeighbours(r,  n6);
+    r = reduceNeighbours(r,  n7);
+    put = r;
+
+    // only cycle for
+    if (put.a > 0.1) {
+        put.a += frameStep;
+    }
+
+    return put;
+}
+feedback MyFeedback = glsl(runFeedback, sizeof(InitialState)) : initialize(initialize), full_range(true), update_rate(fps), filter(nearest), map(clamp);
+
+glsl vec4 animate(vec2 pos, float time) {
+    vec4 original = texture(InitialState, pos);
+    vec4 feedback = texture(MyFeedback, pos);
+    feedback.rgb = hsv2rgb(vec3(feedback.a, colorIntensity, colorIntensity));
+
+    vec4 put = mix(feedback, original, original.a);
+    return put;
+}
+animation MyAnimation = glsl(animate, sizeof(InitialState));
+export png_sequence(MyAnimation, "out/frame_?.png", fps, 3);
