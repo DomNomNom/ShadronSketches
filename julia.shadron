@@ -1,0 +1,55 @@
+#include <multisample>
+#include "complexNumbers.lib.shadron"
+#include "loopAnimation.lib.shadron"
+
+param float tweak = 1.0 : logrange(0.01, 10);
+// param int iterations = 1 : range(0, 10);
+
+param float animationPeriod = 5.0 : logrange(0.1, 60);
+param float animationSmoothingRatio = 1.0 : range(0, 1);
+
+// The input file
+image inputFile = file() : map(mirror);
+
+
+glsl float foldAmount = tweak;
+
+glsl vec4 fold(vec2 pos) {
+    pos -= 0.5;  // translate 0,0 in center
+    // pos *= tweak;
+    // pos *= (pos);
+    // for (int i=0; i<iterations; ++i) {
+    //     pos = complex_multiply(pos, pos);
+    // }
+    // pos = real_pow_complex(tweak, pos);
+    pos = complex_pow_complex(pos, vec2(foldAmount, 0.0));
+    pos += 0.5;  // translate back 0,0 in botton left
+    vec4 sample = texture(inputFile, pos);
+    return sample;
+}
+
+image Folded = glsl(multisample<fold, 4>, sizeof(inputFile));
+
+
+glsl vec4 foldAnimation(vec2 pos, float time) {
+    // foldAmount = pow(10, 0.1 * time - 1.7);
+    foldAmount = pow(10, 0.1 * time - 1.1);
+    return fold(pos);
+}
+
+// glsl vec4
+animation FoldAnimation = glsl(
+    multisampleAnimation<
+        loopAnimaionSmoothly<foldAnimation, animationPeriod, animationSmoothingRatio>,
+        4,
+        1,
+    >,
+    sizeof(inputFile)
+);
+
+
+const float fps = 30;
+export png_sequence(FoldAnimation, "frames/frame_?.png", fps, animationPeriod);
+
+
+

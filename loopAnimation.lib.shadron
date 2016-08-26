@@ -1,0 +1,30 @@
+
+
+// this file allows you to smoothly loop an animation.
+
+template <animation_func, animationPeriod>
+glsl vec4 loopAnimaion(vec2 pos, float time) {
+    return animation_func(pos, mod(time, animationPeriod));
+}
+
+// animationPeriod (0 ... ) Number of seconds it takes for the loop to repeat.
+// smoothingRatio  [0 .. 1] How much of the period is spent blending between the two cycles.
+
+template <animation_func, animationPeriod, smoothingRatio>
+glsl vec4 loopAnimaionSmoothly(vec2 pos, float time) {
+    float smoothingEnd = animationPeriod * smoothingRatio;
+    time += smoothingEnd;  // shift right to cycle at the end of the animation. (implies the first frame is not at time 0)
+
+    time = mod(time, animationPeriod);  // loop
+    float percentThrough = time/animationPeriod;
+    if (percentThrough < smoothingRatio) {
+        float percentNew = percentThrough / smoothingRatio;
+        return mix(
+            animation_func(pos, time + animationPeriod),
+            animation_func(pos, time),
+            percentNew
+        );
+    }
+    return animation_func(pos, time);
+}
+
