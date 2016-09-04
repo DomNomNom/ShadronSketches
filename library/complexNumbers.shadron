@@ -1,30 +1,43 @@
 #include <math_constants>
 
+#define complex vec2
+
 glsl {
 
-vec2 complex_multiply(vec2 z, vec2 w) {
-    return vec2(
+
+complex complex_conjugate(complex z) {
+    return complex(z.x, -z.y);
+}
+
+// Squared absolute value of a complex number
+float complex_norm(complex z) {
+    return dot(z, z);
+}
+
+
+complex complex_multiply(complex z, complex w) {
+    return complex(
         z.x*w.x - z.y*w.y,
         z.x*w.y + z.y*w.x
     );
 }
 
 // computes a^z where only z is complex
-vec2 real_pow_complex(float a, vec2 z) {
-    return pow(a, z.x) * vec2(
+complex real_pow_complex(float a, complex z) {
+    return pow(a, z.x) * complex(
         cos(z.y * log(a)),
         sin(z.y * log(a))
     );
 }
 
 // http://mathworld.wolfram.com/ComplexArgument.html
-float complex_arg(vec2 z) {
+float complex_arg(complex z) {
     return atan(z.y, z.x);
 }
 
 // computes z^w where both are complex
 // http://mathworld.wolfram.com/ComplexExponentiation.html
-vec2 complex_pow_complex(vec2 z, vec2 w) {
+complex complex_pow_complex(complex z, complex w) {
     return complex_multiply(
         real_pow_complex(
             z.x*z.x + z.y*z.y,
@@ -32,7 +45,7 @@ vec2 complex_pow_complex(vec2 z, vec2 w) {
         ),
         real_pow_complex(
             EULER,
-            complex_multiply(vec2(0,1), w) * complex_arg(z)
+            complex_multiply(complex(0,1), w) * complex_arg(z)
         )
     );
 }

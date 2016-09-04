@@ -1,0 +1,12 @@
+
+// I prefer spelling interpolation this way.
+#define lerp mix
+
+
+// Returns a value in the range [a..b] given t [0..1].
+// Linearly interpolates through the exponent of a power.
+// eg. expLerp(0.1, 10.0, 0.5) == 1.0
+//
+glsl float expLerp(float a, float b, float t) {
+    return exp(lerp(log(a), log(b), t));
+}
