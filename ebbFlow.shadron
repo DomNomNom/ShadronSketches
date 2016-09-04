@@ -1,4 +1,4 @@
-#include "hsv.lib.shadron"
+#include "library/hsv.shadron"
 
 glsl const vec4 ORANGE = vec4(1.0, 0.5, 0.0, 1.0);
 
