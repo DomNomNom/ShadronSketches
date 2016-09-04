@@ -1,6 +1,5 @@
 
-
-// this file allows you to smoothly loop an animation.
+// this file allows you to (smoothly) loop an animation.
 
 template <animation_func, animationPeriod>
 glsl vec4 loopAnimaion(vec2 pos, float time) {

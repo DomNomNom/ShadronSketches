@@ -1,3 +1,4 @@
+#version 420  // https://www.opengl.org/wiki/Data_Type_(GLSL)#Initializer_lists
 
 // I prefer spelling interpolation this way.
 #define lerp mix
@@ -5,8 +6,46 @@
 
 // Returns a value in the range [a..b] given t [0..1].
 // Linearly interpolates through the exponent of a power.
-// eg. expLerp(0.1, 10.0, 0.5) == 1.0
-//
+// Example use: expLerp(0.1, 10.0, 0.5) == 1.0
 glsl float expLerp(float a, float b, float t) {
     return exp(lerp(log(a), log(b), t));
+}
+
+
+
+
+
+glsl struct KeyValue {
+    float key;
+    vec4 value;
+};
+
+/*
+Linearly interpolates between multiple values along a key axis.
+Example use:
+    vec4 ramped = ramp<{
+        { 0.40, {1.0, 0.0, 0.0, 1.0} },
+        { 0.50, {0.0, 0.0, 1.0, 1.0} },
+        { 0.60, {1.0, 1.0, 0.0, 1.0} },
+    }>(0.43);
+    // ramped == vec4(0.7, 0.0, 0.3, 1.0);
+*/
+template <KEY_VALUES>
+glsl vec4 ramp(float sampleKey) {
+    KeyValue keyValues[] = KEY_VALUES;
+    if (sampleKey < keyValues[0].key) {
+        return keyValues[0].value;
+    }
+    for (int i = 1; i < keyValues.length(); i++) {
+        float L = keyValues[i-1].key;
+        float R = keyValues[i  ].key;
+        if (L <= sampleKey && sampleKey <= R) {
+            return lerp(
+                keyValues[i-1].value,
+                keyValues[i  ].value,
+                (sampleKey - L) / (R - L)
+            );
+        }
+    }
+    return keyValues[keyValues.length - 1].value;
 }

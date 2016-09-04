@@ -1,0 +1,23 @@
+#include <perlin>
+
+#include "library/loopAnimation.shadron"
+#include "library/lerp.shadron"
+
+
+
+glsl vec4 lavaAnimation(vec2 position, float time) {
+    position.x = position.x + time * 0.1;
+    position *= 5;
+
+    float noise = perlinNoise(vec3(position.x, position.y, sin(time * 2))) / 8 + 0.5;
+    return ramp<{
+        { 0.45, {1.0, 0.0, 0.0, 1.0} },
+        { 0.55, {1.0, 1.0, 0.0, 1.0} },
+    }>(noise);
+}
+
+
+param float animationPeriod = 9.424777 : logrange(0.1, 60);
+param float animationSmoothingRatio = 0.1 : range(0, 1);
+animation Animation = glsl(loopAnimaionSmoothly<lavaAnimation, animationPeriod, animationSmoothingRatio>, 515, 512);
+export png_sequence(Animation, "frames/frame_?.png", 30, animationPeriod);
