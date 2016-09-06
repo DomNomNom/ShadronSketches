@@ -1,10 +1,14 @@
+
+http://www.shaderific.com/glsl-functions/
+
 https://ffmpeg.zeranoe.com/builds/
 
 // video
 http://hamelot.io/visualization/using-ffmpeg-to-convert-a-set-of-images-into-a-video/
-exportTools/ffmpeg -framerate 30 -i frames/frame_%03d.png -s:v 1920x1080 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p MoreBears.mp4
+exportTools\ffmpeg -framerate 30 -i frames/frame_%03d.png -s:v 1920x1080 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p out.mp4
+exportTools\ffmpeg -framerate 30 -i frames/frame_%02d.png -s:v 512x512 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p out.mp4
 
 
 // GIF
 https://stackoverflow.com/questions/3688870/create-animated-gif-from-a-set-of-jpeg-images
-exportTools/ffmpeg -i frames/frame_%03d.png -pix_fmt rgb24 -loop_output 0 out.gif
+exportTools\ffmpeg -i frames/frame_%03d.png -pix_fmt rgb24 out.gif

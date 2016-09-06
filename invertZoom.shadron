@@ -1,0 +1,36 @@
+#include "library/loopAnimation.shadron"
+#include "library/lerp.shadron"
+#include "library/complexNumbers.shadron"
+
+image inputFile = file() : map(clamp);
+
+param float animationPeriod = 8 : logrange(0.1, 60);
+param float animationSmoothingRatio = 0.1 : range(0, 1);
+
+param float startscale = 1.1 : range(0, 2);
+param float endscale = 0.8 : range(0, 2);
+param float rotation = 0.1 : range(-1, 1);
+
+glsl vec4 invertZoomAnimation(vec2 pos, float time) {
+    pos -= .5;
+    time /= animationPeriod;
+    bool invert = false;
+    if (time > 0.5) {
+        time -= 0.5;
+        invert = true;
+    }
+    time *= 2;
+    // now time is in the range[0..1] but twice within the animationPeriod.
+
+    pos *= lerp(startscale, endscale, time/animationPeriod);
+    pos = complex_rotate(pos, rotation * PI/2 *time);
+    pos += .5;
+    vec4 color = texture(inputFile, pos);
+    if (invert) color = 1.0 - color;
+    color.a = 1.0;
+    return color;
+}
+
+animation Animation = glsl(loopAnimaionSmoothly<invertZoomAnimation, animationPeriod, animationSmoothingRatio>, 515, 512);
+export png_sequence(Animation, "frames/frame_?.png", 30, animationPeriod);
+

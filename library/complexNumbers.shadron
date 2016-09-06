@@ -22,6 +22,17 @@ complex complex_multiply(complex z, complex w) {
     );
 }
 
+complex complex_phase(float angle) {
+    return complex(
+        cos(angle),
+        sin(angle)
+    );
+}
+
+complex complex_rotate(complex z, float angle) {
+    return complex_multiply(z, complex_phase(angle));
+}
+
 // computes a^z where only z is complex
 complex real_pow_complex(float a, complex z) {
     return pow(a, z.x) * complex(
