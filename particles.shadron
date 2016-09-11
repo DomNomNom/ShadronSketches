@@ -1,0 +1,110 @@
+
+// This example demonstrates how a particle system is defined and displays a simple, yet visually appealing effect
+// Author: Viktor Chlumsky, 2016
+
+#include <math_constants>
+#include <affine_transform>
+#include <perlin>
+#include <hsv>
+
+#include "library/lerp.shadron"
+
+const ivec2 DIMENSIONS = ivec2(1920, 1080);
+const int PARTICLE_COUNT = 2048;
+
+const float animationPeriod = 4;
+
+
+param float spreadDist = 0.5;
+
+
+// Pseudorandom function
+glsl float random(int seed, int salt) {
+    vec2 pCoord = mod(vec2(1949.1797*float(seed), 33.1478221*float(salt)), 1823.5355121);
+    return 0.5*(perlinNoise(pCoord)+1.0);
+}
+
+// Per particle data
+glsl struct ParticleData {
+    vec2 pos;
+    vec2 targetPos;
+    vec2 direction;
+    float phase;
+    float size;
+    float rot;
+    float speed;
+    vec3 color;
+};
+
+// Initialize particle data with pseudo-random values
+glsl void initialize(out ParticleData p, int i) {
+    p.pos = 3.0*vec2(random(i, 0), random(i, 1))-1.5;
+    p.targetPos = p.pos;
+    p.phase = TAU*random(i, 2);
+    float baseSize = 0.02+pow(random(i, 3), 4.0);
+    p.size = 0.25*baseSize;
+    p.rot = TAU*random(i, 4);
+    p.speed = 0.1*pow(1.0+4.0*random(i, 5), 2.0);
+    p.color = hsv(0.2+0.5*random(i, 6), 1.0, 0.25*(0.25+0.5*random(i, 7))/pow(baseSize, 0.625));
+}
+
+// Update particle position, phase and rotation
+glsl void update(inout ParticleData p, float dt) {
+    // float y = 0.5*(1.0-p.pos.y);
+    // p.pos += dt*vec2(0.125*(1.0+p.speed)*sin(p.phase)*y, p.speed*0.5*(1.0+y));
+    // p.pos = mod(p.pos+1.25, 2.5)-1.25;
+    // p.phase += 4.0*dt;
+
+    float zipper = mod(shadron_Time, animationPeriod) - 1;
+    // float zipper = shadron_Time - 1;
+    p.pos = p.targetPos;
+
+    if (p.pos.x > zipper) {
+        p.pos.x = zipper;
+    }
+    p.pos.y = lerp(0.0, p.pos.y, (zipper - p.pos.x)/spreadDist);
+    p.rot += 0.01*dt;
+}
+
+// Particle vertex shader (hexagon shape)
+glsl vec4 vertex(out vec4 color, in ParticleData p, int i) {
+    vec2 coord = vec2(0.0);
+    if (i > 0) {
+        float a = 1.0/6.0*TAU*float(i-1)+p.rot;
+        float aspect = shadron_PixelSize.x/shadron_PixelSize.y;
+        coord = p.size * vec2(aspect*sin(a), cos(a));
+    }
+    coord = p.pos+coord;
+    color = vec4(p.color*0.5*(0.875-p.pos.y), 1.0);
+    return vec4(coord, 0.0, 1.0);
+}
+
+// Particle fragment shader
+glsl vec4 fragment(in vec4 color) {
+    return color;
+}
+
+// Particle system definition
+particle_system animation Particles :
+    dimensions(DIMENSIONS),
+    particle_data(ParticleData),
+    fragment_data(vec4),
+    initialize(initialize),
+    update(update),
+    vertex(vertex, triangle_fan, 8),
+    fragment(fragment),
+    count(PARTICLE_COUNT),
+    background(vec3(0.05)),
+    blend(additive),
+    multisample(4),
+    map(clamp);
+
+glsl vec4 animate(vec2 pos, float time) {
+    vec4 particle = texture(Particles, pos);
+    return particle;
+}
+animation MyAnimation = glsl(animate, DIMENSIONS);
+
+
+const float fps = 30;
+export png_sequence(Particles, "frames/frame_?.png", fps, animationPeriod);

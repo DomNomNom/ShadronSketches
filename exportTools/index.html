@@ -1,0 +1,158 @@
+<html>
+<head>
+<meta charset="utf-8" />
+<style type="text/css">
+body {
+    color: #EEE;
+    background: rgb(51, 51, 51) none repeat scroll 0% 0%;
+    margin: 0px;
+}
+.hideCursor {
+    cursor: none;
+}
+.big {
+    height: 100%;
+    width:  100%;
+    margin: 0px;
+}
+
+video {
+    z-index: 2; position: absolute; top: 0px; left: 0px;
+}
+#select-container {
+    z-index: 3; position: absolute; top: 20px; left: 20px;
+}
+#loading {
+    background: rgba(0,0,0,0) none repeat scroll 0% 0%;
+    z-index: 1; position: absolute; top: 0px; left: 0px;
+    display: flex; /* or inline-flex */
+    align-items: center;
+    justify-content: center;
+}
+select {
+    padding: 5px;
+    background-color: #333;
+    color: #EEE;
+}
+#video-container {
+    height: 100%;
+    width:  100%;
+    display: block;
+    margin: auto;
+}
+.hidden {
+    display: none;
+}
+
+select {
+    font-size: 40px;
+}
+</style>
+</head>
+
+<body>
+    <div id="select-container">
+        <select id="selector" onchange="changeVideo(this);">
+            <option value="https://domnomnom.com/Shadron/SparklingProjectile.mp4">Sparkling Projectile</option>
+            <option value="https://domnomnom.com/Shadron/Fold/Fold.mp4">Unfolding</option>
+            <option value="https://domnomnom.com/Shadron/JuliaDots/JuliaDots.mp4">Julia Dots</option>
+            <option value="https://domnomnom.com/Shadron/HypnoGrumpyCat/HypnoGrumpyCat.mp4">Hypno Grumpy Cat</option>
+            <option value="https://domnomnom.com/Shadron/EbbFlow/EbbFlow.mp4">Psychadelic Shadron</option>
+            <!-- <option value="https://domnomnom.com/Shadron/MoreBears/MoreBears.mp4">More Bears</option> -->
+        </select>
+    </div>
+
+    <video class="big" id="video" autoplay="" loop="" onclick="fullscreen();">
+        <source id="source" src="https://domnomnom.com/Shadron/SparklingProjectile.mp4" type="video/mp4">
+    </video>
+    <div class="big" id="loading">
+        <div>
+            Loading...
+        </div>
+    </div>
+
+
+<script type="text/javascript">
+"use strict";
+const selector = document.getElementById('select-container');
+
+let lastMouseTime = null;
+let lastMouseX = null;
+let lastMouseY = null;
+let hideTimeout = null;
+document.addEventListener("mouseout", (e) => {
+    const from = e.relatedTarget || e.toElement;
+    if (!from || from.nodeName == "HTML") {
+        startHidingTimeout();
+    }
+});
+const cursorElement = document.body;
+document.body.addEventListener("mousemove", (e) => {
+    const now = Date.now();
+    if (lastMouseTime === null) {
+        lastMouseTime = now;
+        lastMouseX = e.screenX;
+        lastMouseY = e.screenY;
+        return;
+    }
+
+    const dx = e.screenX - lastMouseX;
+    const dy = e.screenY - lastMouseY;
+    lastMouseTime = now;
+    lastMouseX = e.screenX;
+    lastMouseY = e.screenY;
+    const moveAmount = Math.abs(dx) + Math.abs(dy);
+    let shouldShow = moveAmount > 2;
+    if (e.screenX < 0) shouldShow = false;
+    if (e.screenY < 0) shouldShow = false;
+
+    startHidingTimeout();
+    if (!shouldShow) return;
+    stopHidingTimeout();
+})
+selector.addEventListener('mousemove', (e) => {
+    setTimeout(stopHidingTimeout, 10);
+})
+function startHidingTimeout() {
+    hideTimeout = hideTimeout || setTimeout(() => {
+        selector.className = 'hidden';
+        cursorElement.className = 'hideCursor';
+    }, 1000);
+}
+function stopHidingTimeout() {
+    clearTimeout(hideTimeout);
+    hideTimeout = null;
+    selector.className = '';
+    cursorElement.className = '';
+}
+
+function changeVideo(selector) {
+    const video = document.getElementById('video');
+    const source = document.getElementById('source');
+    source.setAttribute('src', selector.value);
+    video.load();
+}
+
+function fullscreen() {
+    // go full-screen
+    const fullscreenElement = document.documentElement;
+    if (fullscreenElement.requestFullscreen) {
+        fullscreenElement.requestFullscreen();
+    }
+    else if (fullscreenElement.webkitRequestFullscreen) {
+        fullscreenElement.webkitRequestFullscreen();
+    }
+    else if (fullscreenElement.mozRequestFullScreen) {
+        fullscreenElement.mozRequestFullScreen();
+    }
+    else if (fullscreenElement.msRequestFullscreen) {
+        fullscreenElement.msRequestFullscreen();
+    }
+}
+
+
+</script>
+
+</body>
+</html>
+
