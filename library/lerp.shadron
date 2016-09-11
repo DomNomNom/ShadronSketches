@@ -3,6 +3,9 @@
 // I prefer spelling interpolation this way.
 #define lerp mix
 
+glsl float clamp01(float x) {
+    return clamp(x, 0.0, 1.0);
+}
 
 // Returns a value in the range [a..b] given t [0..1].
 // Linearly interpolates through the exponent of a power.
