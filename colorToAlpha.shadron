@@ -1,0 +1,56 @@
+#version 420
+
+#include "library/lerp.shadron"
+#include "library/colorSpaces.shadron"
+#include "library/complexNumbers.shadron"
+
+image inputFile = file() : map(clamp);
+
+param vec2 samplePosition = vec2(0.5, 0.5) : range(0, 1);
+param float bias = 0.5 : range(0, 1);
+
+glsl vec4 colorToAlpha(vec4 input, vec4 zeroAlphaColor) {
+    float dist;
+
+    // RGB distance
+    // dist = distance(zeroAlphaColor.rgb, input.rgb);
+
+    // // HSV distance
+    // vec3 hsv_alpha = rgb2hsv(zeroAlphaColor.rgb);
+    // vec3 hsv_input = rgb2hsv(input.rgb);
+    // float hueDiff = min(
+    //     abs(    hsv_alpha.x             -     hsv_input.x            ),
+    //     abs(mod(hsv_alpha.x + 0.5, 1.0) - mod(hsv_input.x + 0.5, 1.0))
+    // );
+    // float valueDiff = abs(hsv_alpha.z - hsv_input.z);
+    // // dist = valueDiff;
+    // // dist = hueDiff;
+    // dist = lerp(valueDiff, hueDiff, hsv_input.y);
+
+    // YUV distance. This is more accurate to the human eye.
+    dist = distance(rgb2yuv(zeroAlphaColor.rgb), rgb2yuv(input.rgb));
+
+    return vec4(input.rgb, dist);
+}
+glsl vec4 colorToAlphaDemo(vec2 pos) {
+    vec4 color = texture(inputFile, pos);
+    color = colorToAlpha(color, texture(inputFile, samplePosition));
+    color.a = applyBias(color.a, bias);
+
+    return color;
+}
+
+glsl vec4 showCursor(vec2 pos) {
+    bool drawGuide = false;
+    vec4 guideColor = vec4(1.0, 0.0, 0.5, 1.0);
+    if (abs(pos.x - samplePosition.x) <= shadron_PixelSize.x*0.5) drawGuide = !drawGuide;
+    if (abs(pos.y - samplePosition.y) <= shadron_PixelSize.y*0.5) drawGuide = !drawGuide;
+    if (drawGuide) return guideColor;
+
+
+    return colorToAlphaDemo(pos);
+}
+
+image Image = glsl(colorToAlphaDemo, sizeof(inputFile));
+image Selector = glsl(showCursor, sizeof(inputFile));
+

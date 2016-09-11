@@ -1,12 +1,21 @@
 glsl {
-// glsl vec3 hsv2rgb(vec3 hsv) {
-//     return hsv2rgb(hsv.x, hsv.y, hsv.z)
-// }
 
-// glsl vec3 hsv2rgb(float h, float s, float v) {
-//     vec3 c = clamp(abs(6.0*fract(vec3(1.0, 0.666666666667, 0.333333333333)+h)-3.0)-1.0, 0.0, 1.0);
-//     return v*mix(vec3(1.0), c, s);
-// }
+// https://en.wikipedia.org/wiki/YUV#SDTV_with_BT.601
+// based on https://stackoverflow.com/questions/9234724/how-to-change-hue-of-a-texture-with-glsl/9234854#9234854
+vec3 rgb2yuv(vec3 rgb) {
+    return mat3(
+        vec3(0.299,  0.587,  0.114),
+        vec3(0.596, -0.275, -0.321),
+        vec3(0.212, -0.523,  0.311)
+    ) * rgb;
+}
+vec3 yuv2rgb(vec3 yuv) {
+    return mat3(
+        vec3(1.0,  0.956,  0.621),
+        vec3(1.0, -0.272, -0.647),
+        vec3(1.0, -1.107,  1.704)
+    ) * yuv;
+}
 
 
 vec3 hsv2rgb(vec3 c) {

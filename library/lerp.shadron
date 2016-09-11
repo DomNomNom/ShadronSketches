@@ -12,7 +12,18 @@ glsl float expLerp(float a, float b, float t) {
 }
 
 
-
+// Biases x towards 0 or 1 depending on the bias value.
+// https://www.desmos.com/calculator/mun3qucoht
+// applyBias(x, 0.0) == 0
+// applyBias(x, 0.5) == x
+// applyBias(x, 1.0) == 1
+// applyBias(1-b, b) == b
+glsl float applyBias(float x, float bias) {
+    if (bias < 0.00001) return 0.0;
+    x = clamp(x, 0.0, 1.0);
+    float c = -log2(1 - bias);
+    return 1.0 - pow(1.0 - pow(x, 1.0/c), c);
+}
 
 
 glsl struct KeyValue {
