@@ -35,4 +35,16 @@ vec3 rgb2hsv(vec3 rgb) {
 }
 
 
+// gamma correction stuff. (always use this if you compute light-amounts)
+// https://www.desmos.com/calculator/74vpzqsyxy
+vec3 inputExposure(inout vec3 rgb, float exposure) {
+    rgb = -log2(1.0 - rgb) / exposure;
+    return rgb;
+}
+
+vec3 outputExposure(inout vec3 rgb, float exposure) {
+    rgb = 1.0 - exp2(-exposure * rgb);
+    return rgb;
+}
+
 }

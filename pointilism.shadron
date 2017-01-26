@@ -1,0 +1,207 @@
+#version 420
+
+#include <math_constants>
+#include <affine_transform>
+#include <perlin>
+// #include <hsv>
+
+#include "library/lerp.shadron"
+#include "library/colorSpaces.shadron"
+
+image TargetImage = file();
+// const int PARTICLE_COUNT = 2048;
+const int PARTICLE_COUNT = 2048;
+
+const float animationPeriod = 3;
+const float particleGeometryPadding = 1.5;
+
+param float chargeRadius = 0.05 : range(0, 0.5);
+param float chargeFalloffBias = 0.5;
+param float chargeMax = 0.5;
+param float dotRadius = 0.001 : range(0, 0.01);
+
+param float forceTarget = 10 : range(-100, 100);
+param float forceCharge = -10    : range(0, -100);
+param float forceRandom = 0.001 : range(0, 0.01);
+
+param float exposure = 1.0 : range(0, 4);
+
+// Pseudorandom function returns 0..1
+glsl float random(int seed, int salt) {
+    vec2 pCoord = mod(vec2(1949.1797*float(seed), 33.1478221*float(salt)), 1823.5355121);
+    return 0.5*(perlinNoise(pCoord)+1.0);
+}
+
+// Pseudorandom function returns -1..1
+glsl float random_n11(int seed, int salt) {
+    vec2 pCoord = mod(vec2(1949.1797*float(seed), 33.1478221*float(salt)), 1823.5355121);
+    return perlinNoise(pCoord);
+}
+
+// Per particle data
+glsl struct ParticleData {
+    vec2 pos;
+    vec2 targetPos;
+    vec2 direction;
+    float phase;
+    float size;
+    float rot;
+    float speed;
+    vec3 color;
+    float id;
+};
+
+// Initialize particle data with pseudo-random values
+glsl void initialize(out ParticleData p, int i) {
+    p.pos = vec2(random_n11(i, 0), random_n11(i, 1)) *1.3 *0.5+0.5;  // note: about 0..1
+    p.targetPos = p.pos;
+    p.phase = TAU*random(i, 2);
+    p.rot = TAU*random(i, 4);
+    p.speed = 0.1 * pow(1.0+4.0*random(i, 5), 2.0);
+    p.size = chargeRadius;
+    // p.color = 0.05 * hsv(0.2+0.5*random(i, 6), 1.0, 0.25*(0.25+0.5*random(i, 7))/pow(chargeRadius, 0.625));
+    p.color = vec3(p.pos.x, p.pos.y, 0.0);
+    p.color = texture(TargetImage, p.pos).rgb;
+    p.id = i;
+}
+
+glsl {   float getCharge(vec2 pos);  }  // Forward declaration as this depends on the output of the particle system.
+
+// Update particle position, phase and rotation
+glsl void update(inout ParticleData p, float dt) {
+    p.size = chargeRadius;
+    // brownian motion
+    vec2 cumulativeCharge = vec2(0);
+    vec2 cumulativeTarget = vec2(0);
+    vec2 offsets[] = {{-1, -1}, { 0, -1}, {+1, -1}, {-1,  0}, {+1,  0}, {-1, +1}, { 0, +1}, {+1, +1} };
+    for (int i=0; i<offsets.length(); ++i) {
+        vec2 offset =  0.002 * offsets[i];
+        cumulativeCharge += getCharge(p.pos + offset) * offset;
+        cumulativeTarget += (texture(TargetImage, p.pos).r *2 - 1) * offset;
+    }
+    int id = int(p.id);
+    vec2 vel = vec2(0);
+    vel += forceCharge * cumulativeCharge;// * (texture(TargetImage, p.pos).r-.5);
+    vel += forceRandom * vec2(random_n11(id, 0 + int(shadron_Time*1000)), random_n11(id, 1 + int(shadron_Time*1000)));
+    // vel += forceTarget * cumulativeTarget;
+    float maxSpeed = 0.003;
+    if (length(vel) > maxSpeed) {
+        vel = maxSpeed * normalize(vel);
+    }
+
+    p.pos += vel;
+    p.pos.x = clamp01(p.pos.x);
+    p.pos.y = clamp01(p.pos.y);
+    // p.pos += 0.001 * (2 * vec2(random(shadron_ParticleID + int(shadron_Time), 7), random(shadron_ParticleID + int(shadron_Time), 8)) - 1);
+    p.color = vec3(0.0); vec3(getCharge(p.pos)); // 1-texture(TargetImage, p.pos).rgb;
+}
+
+glsl struct FragmentData {
+    vec2 particlePos;  // worldspace
+    vec2 modelPos;     // modelspace
+    vec3 color;
+};
+
+
+// Particle vertex shader (hexagon shape)
+glsl vec4 vertex(out FragmentData fragData, in ParticleData p, int i) {
+    vec2 coord = vec2(0.0);
+    fragData.modelPos = coord;
+    if (i > 0) {
+        float a = 1.0/6.0*TAU*float(i-1) + p.rot;
+        float aspect = shadron_PixelSize.x/shadron_PixelSize.y;
+        coord = particleGeometryPadding * p.size * vec2(aspect*sin(a), cos(a));
+        fragData.modelPos = particleGeometryPadding * p.size * vec2(sin(a), cos(a));
+    }
+
+    fragData.particlePos = p.pos;
+    fragData.color = p.color;
+    coord += p.pos;
+
+    // fragData = p.color.rgb;
+    // fragData.pos = p.pos;
+    // fragData.targetPos = p.targetPos;
+    // fragData.direction = p.direction;
+    // fragData.phase = p.phase;
+    // fragData.size = p.size;
+    // fragData.rot = p.rot;
+    // fragData.speed = p.speed;
+    // fragData.color = p.color;
+    return vec4(coord * 2 - 1, 0.0, 1.0);
+}
+
+// Particle fragment shader
+glsl vec4 fragment(in FragmentData d) {
+    float distance = length(d.modelPos);
+    if (distance < chargeRadius) {
+        // lerp(0.5, 0.1, d.particlePos.y)
+        float charge = 1-(distance/chargeRadius);  // charge emitted by this particle.
+        charge = applyBias(charge, chargeFalloffBias);
+        charge *= chargeMax;
+        float point = 0;
+        if (distance < dotRadius) {
+            point = 1.0;
+        }
+        return vec4(charge, point, 0, 1);
+    }
+}
+
+// Particle system definition
+particle_system animation Particles :
+    dimensions(sizeof TargetImage),
+    particle_data(ParticleData),
+    fragment_data(FragmentData),
+    initialize(initialize),
+    update(update),
+    vertex(vertex, triangle_fan, 8),
+    fragment(fragment),
+    count(PARTICLE_COUNT),
+    background(vec4(0.0)),
+    blend(additive),
+    // blend(transparency),
+    // multisample(4),
+    // wireframe(true),
+    map(clamp);
+glsl vec4 animate(vec2 pos, float time) {
+    vec4 target = texture(TargetImage, pos);
+    // target.rgb = vec3(0);
+    vec4 particle = texture(Particles, pos);
+    particle.g = 0;
+    // inputExposure(target.rgb, exposure);
+    vec4 color;
+    // color = lerp(target, particle, particle.a);
+    color.rgb = lerp(target.rgb, particle.rgb, clamp01(particle.r));
+    color.a = 1.0;
+    // outputExposure(color.rgb, exposure);
+    // color.rgb = vec3(pos.x, pos.y, 0);
+    return color;
+}
+glsl vec4 getScreenshot(vec2 pos) {
+    return animate(pos, 0);
+    // return texture(Particles, pos);
+}
+image MyImage = glsl(getScreenshot, sizeof TargetImage);
+
+glsl float getCharge(vec2 pos) {
+    vec4 target = texture(TargetImage, pos);
+    // return target.r;
+    return texture(Particles, pos).r  * (target.r+1);
+}
+glsl float getDot(vec2 pos) {
+    vec4 tex = texture(Particles, pos);
+    return tex.g;
+}
+
+glsl vec4 final(vec2 pos) {
+    return texture(TargetImage, pos);
+    return vec4(getDot(pos));
+}
+image Dots = glsl(final, sizeof TargetImage);
+
+// animation MyAnimation = glsl(animate, sizeof TargetImage);
+// const float fps = 30;
+// export png_sequence(MyAnimation, "frames/frame_?.png", fps, animationPeriod);
+
+// 1 The Dom is my shepherd, I lack nothing.
+// 2 He makes me harvest energy, construct structures, attack another creeps,
+// 3 he refreshes my soul. He guides me along the constructed road for his name’s sake.

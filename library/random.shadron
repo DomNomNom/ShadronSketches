@@ -1,0 +1,14 @@
+
+#include <perlin>
+
+// Pseudorandom function returns -1..1
+glsl float random_n11(float seed, int salt) {
+    vec2 pCoord = mod(vec2(1949.1797*float(salt), 33.1478221*seed), 1823.5355121);
+    return perlinNoise(pCoord);
+}
+
+
+// glsl float random_n11(float seed, int salt) {
+//     vec2 pCoord = mod(vec2(1949.1797*float(salt), 33.1478221*seed), 1823.5355121);
+//     return perlinNoise(pCoord);
+// }

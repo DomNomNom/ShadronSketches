@@ -1,0 +1,67 @@
+#version 420
+
+#include <multisample>
+#include "library/lerp.shadron"
+#include "library/complexNumbers.shadron"
+// #include "library/random.shadron"
+
+image input_image = file() : map(repeat);
+
+// param vec2 tweak : range(-1, 100);
+param float tweak2 : range(-1, 2);
+
+param float grid_edge_length : range(10, 200);
+// param float grid_scale : range(0, 1);
+param float angle : range(0, TAU);
+// param vec2 vibrationMinMax: range(0, 0.1); // min/max
+
+glsl vec4 orange = vec4(1.0, 0.5, 0, 1.0);
+glsl vec4 background_color = vec4(vec3(0), 1.0);
+
+glsl float manhattan(vec2 a, vec2 z) {
+    return max(abs(a.x - z.x), abs(a.y - z.y));
+}
+
+glsl vec4 hilbert_animation_func(vec2 pos, float time) {
+    float theta = angle;
+    vec2 shift = vec2(0);
+    pos -= shift;
+    pos /= shadron_PixelSize;
+
+    ivec2 grid_coord = ivec2(pos / grid_edge_length);
+    bool toggle = false;
+    if (grid_coord.x % 2 == 0) toggle = !toggle;
+    if (grid_coord.y % 2 == 0) toggle = !toggle;
+    vec2 dir = lerp(vec2(1,0), vec2(0, 1), toggle);
+    pos -= dir * grid_edge_length * tweak2;
+
+    float minScale = 0.5;
+    float amplitude = (1.0 - minScale) / 2;
+    float grid_scale = minScale + amplitude + amplitude*cos(shadron_Time); //shadron_Time - 1 * sin(shadron_Time);
+
+    // float grid_edge_length = tweak.x;
+    vec2 d = mod(pos, vec2(grid_edge_length));
+    vec2 corner = pos - d;
+    vec2 center = corner + grid_edge_length * 0.5;
+    vec2 scaled = lerp(center, pos, 1/grid_scale);
+
+    if (manhattan(pos, center)/grid_scale > 0.5 * grid_edge_length) return background_color;
+    pos = scaled;
+
+
+    pos *= shadron_PixelSize;
+    pos += shift;
+
+    vec4 color = texture(input_image,  pos);
+    return color;
+}
+
+glsl vec4 hilbert_func(vec2 pos) {
+    return hilbert_animation_func(pos, 0);
+}
+
+animation hilbert_animation = glsl(multisampleAnimation<hilbert_animation_func, 4, 1>, sizeof input_image);
+export png_sequence(hilbert_animation, "frames/frame_?.png", 30, TAU);
+// image hilbert_image = glsl(hilbert_func, sizeof input_image);
+
+

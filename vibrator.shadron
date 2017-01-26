@@ -1,0 +1,64 @@
+#version 420
+
+#include "library/lerp.shadron"
+#include "library/complexNumbers.shadron"
+#include "library/random.shadron"
+
+image Img = file() : map(clamp);
+image Img2 = file() : map(clamp);
+image Background = file() : map(clamp);
+
+param vec2 tweak : range(-1, 1);
+param float textPeriod : range(0, 2);
+param vec2 vibrationMinMax: range(0, 0.1); // min/max
+
+param float noiseAmplitude : range(0, 0.9);
+
+glsl vec2 transform(vec2 pos) {
+    pos -= 0.5;
+    pos = complex_rotate(pos, TAU/4);
+    pos += 0.5;
+    return pos;
+}
+
+glsl vec4 blend(vec4 x, vec4 y) {
+    return vec4(0.5*(lerp(x.rgb, y.rgb, 1-x.a) + lerp(x.rgb, y.rgb, y.a)), clamp01(x.a + y.a));
+    // return vec4(lerp(x.rgb, y.rgb, 1-x.a), clamp01(x.a + y.a));
+    // return vec4(lerp(x.rgb, y.rgb, y.a), 1/(1/x.a + 1/y.a));
+    // return vec4(lerp(x.rgb, y.rgb, y.a/(x.a + y.a)), clamp01(x.a + y.a));
+}
+
+glsl float hashCombine(float x, float y) {
+    x += 4.5;
+    return 0.3517 * x*x + y;
+}
+
+glsl vec4 fierstein(vec2 pos, float time) {
+    vec3 background = texture(Background, pos).rgb;
+    vec3 grain = vec3(noiseAmplitude * random_n11(hashCombine(732.1*pos.y, hashCombine(time, 1315.7*pos.x)), 4));
+    float amplitude = 0.5 + 0.5 * cos(2 * time * TAU / textPeriod);
+    amplitude = lerp(vibrationMinMax.x, vibrationMinMax.y, amplitude);
+    vec2 offset = amplitude * vec2(
+        random_n11(time, 2),
+        random_n11(time, 3)
+    );
+    pos += offset;
+
+    bool flip = mod(shadron_Time, textPeriod) / textPeriod < 0.5;
+    vec4 color;
+    if (flip) color = texture(Img,  pos);
+    else      color = texture(Img2, pos);
+    // color = vec4(vec3(0), 1-color.r);
+    // color.r = mod(shadron_Time, 2.1);
+
+    color.rgb = mix(background, vec3(0.1), 1-color.r);
+    color.rgb += grain;
+    return color;
+    // return texture(Img, pos);
+}
+
+// image Fierstein = glsl(fierstein, sizeof Img);
+animation Animation = glsl(fierstein, sizeof Img);
+export png_sequence(Animation, "frames/frame_?.png", 30, 1.618);
+
+

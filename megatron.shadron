@@ -1,0 +1,49 @@
+#include <multisample>
+
+#include "library/loopAnimation.shadron"
+#include "library/lerp.shadron"
+#include "library/complexNumbers.shadron"
+
+image Background = file() : map(clamp);
+image Text = file() : map(clamp);
+
+param float animationPeriod = 8 : logrange(0.1, 60);
+param float animationSmoothingRatio = 0.1;
+
+param float startscale = 1.0 : range(0, 2);
+param float endscale = 2 : range(0, 2);
+param float travel = 0 : range(-1, 20);
+param float scaleX = 1 : range(0, 4);
+
+glsl vec4 starWarsOpeningCrawl(vec2 pos, float time) {
+    float scale = expLerp(startscale, endscale, time/animationPeriod);
+    vec4 color = texture(Background, pos);
+    bool isInverted = pos.y > 0.5;
+    vec2 textPos = pos;
+    // if (textPos.y > 0.5) text.a = 0.0;
+    textPos.y *= endscale;
+    textPos.x -= 0.5 * textPos.y;
+    textPos.x /= (1-textPos.y);
+    textPos.y = tan(TAU/4 * textPos.y);
+    textPos.y *= startscale;
+    textPos.y -= (time-1.);
+    textPos.x -= 0.5;
+    textPos.x *= scaleX;
+    textPos.x += 0.5;
+    vec4 text = texture(Text, textPos);
+    if (isInverted) {
+        text.a = 0.0;
+    }
+    color = lerp(color, text, text.a);
+    return color;
+}
+
+animation Animation = glsl(
+    multisampleAnimation<
+        loopAnimaionSmoothly<starWarsOpeningCrawl, animationPeriod, animationSmoothingRatio>,
+        4,
+        1,
+    >,
+    sizeof Background);
+export png_sequence(Animation, "frames/frame_?.png", 15, animationPeriod);
+

@@ -1,0 +1,37 @@
+#version 420
+
+#include "library/lerp.shadron"
+#include "library/complexNumbers.shadron"
+
+image Img = file() : map(clamp);
+
+param vec2 tweak : range(-1, 1);
+param float tween : range(-2, 1);
+
+glsl vec2 transform(vec2 pos) {
+    pos -= 0.5;
+    pos = complex_rotate(pos, TAU/4);
+    pos += 0.5;
+    return pos;
+}
+
+glsl vec4 blend(vec4 x, vec4 y) {
+    return vec4(0.5*(lerp(x.rgb, y.rgb, 1-x.a) + lerp(x.rgb, y.rgb, y.a)), clamp01(x.a + y.a));
+    // return vec4(lerp(x.rgb, y.rgb, 1-x.a), clamp01(x.a + y.a));
+    // return vec4(lerp(x.rgb, y.rgb, y.a), 1/(1/x.a + 1/y.a));
+    // return vec4(lerp(x.rgb, y.rgb, y.a/(x.a + y.a)), clamp01(x.a + y.a));
+}
+
+glsl vec4 fierstein(vec2 pos) {
+    vec4 a = texture(Img, tween * tweak + pos);
+    vec4 b = texture(Img, tween * tweak + transform(pos));
+    vec4 c = texture(Img, tween * tweak + transform(transform(pos)));
+    vec4 d = texture(Img, tween * tweak + transform(transform(transform(pos))));
+
+    return blend(blend(a,b), blend(c,d));
+    // return texture(Img, pos);
+}
+
+image Fierstein = glsl(fierstein, sizeof Img);
+
+

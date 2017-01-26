@@ -53,12 +53,14 @@ select {
 <body>
     <div id="select-container">
         <select id="selector" onchange="changeVideo(this);">
-            <option value="https://domnomnom.com/Shadron/SparklingProjectile.mp4">Sparkling Projectile</option>
-            <option value="https://domnomnom.com/Shadron/Fold/Fold.mp4">Unfolding</option>
-            <option value="https://domnomnom.com/Shadron/JuliaDots/JuliaDots.mp4">Julia Dots</option>
-            <option value="https://domnomnom.com/Shadron/HypnoGrumpyCat/HypnoGrumpyCat.mp4">Hypno Grumpy Cat</option>
-            <option value="https://domnomnom.com/Shadron/EbbFlow/EbbFlow.mp4">Psychadelic Shadron</option>
-            <!-- <option value="https://domnomnom.com/Shadron/MoreBears/MoreBears.mp4">More Bears</option> -->
+            <option value="SparklingProjectile">Sparkling Projectile</option>
+            <option value="Fold/Fold">Unfolding</option>
+            <option value="JuliaDots/JuliaDots">Julia Dots</option>
+            <option value="HypnoGrumpyCat/HypnoGrumpyCat">Hypno Grumpy Cat</option>
+            <option value="EbbFlow/EbbFlow">Psychadelic Shadron</option>
+            <option value="OddFlow">OddFlow</option>
+            <!-- <option value="MegatronDca.mp4">Award</option> -->
+            <!-- <option value="MoreBears/MoreBears.mp4">More Bears</option> -->
         </select>
     </div>
 
@@ -74,7 +76,9 @@ select {
 
 <script type="text/javascript">
 "use strict";
-const selector = document.getElementById('select-container');
+const selectorContainer = document.getElementById('select-container');
+const selector = document.getElementById('selector');
+
 
 let lastMouseTime = null;
 let lastMouseX = null;
@@ -110,26 +114,26 @@ document.body.addEventListener("mousemove", (e) => {
     if (!shouldShow) return;
     stopHidingTimeout();
 })
-selector.addEventListener('mousemove', (e) => {
+selectorContainer.addEventListener('mousemove', (e) => {
     setTimeout(stopHidingTimeout, 10);
 })
 function startHidingTimeout() {
     hideTimeout = hideTimeout || setTimeout(() => {
-        selector.className = 'hidden';
+        selectorContainer.className = 'hidden';
         cursorElement.className = 'hideCursor';
     }, 1000);
 }
 function stopHidingTimeout() {
     clearTimeout(hideTimeout);
     hideTimeout = null;
-    selector.className = '';
+    selectorContainer.className = '';
     cursorElement.className = '';
 }
 
 function changeVideo(selector) {
     const video = document.getElementById('video');
     const source = document.getElementById('source');
-    source.setAttribute('src', selector.value);
+    source.setAttribute('src', 'https://domnomnom.com/Shadron/' + selector.value + '.mp4');
     video.load();
 }
 
@@ -150,6 +154,21 @@ function fullscreen() {
     }
 }
 
+
+
+function getParameterByName(name, url) {
+    if (!url) url = window.location.href;
+    name = name.replace(/[\[\]]/g, "\\$&");
+    var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"),
+        results = regex.exec(url);
+    if (!results) return null;
+    if (!results[2]) return '';
+    return decodeURIComponent(results[2].replace(/\+/g, " "));
+}
+
+const startVideo = getParameterByName('v') || "SparklingProjectile.mp4"
+selector.value = startVideo;
+changeVideo(selector);
 
 </script>
 

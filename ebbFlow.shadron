@@ -80,4 +80,4 @@ glsl vec4 animate(vec2 pos, float time) {
     return put;
 }
 animation MyAnimation = glsl(animate, sizeof(InitialState));
-export png_sequence(MyAnimation, "frames/frame_?.png", fps, 3);
+export png_sequence(MyAnimation, "frames/frame_?.png", fps, 10);

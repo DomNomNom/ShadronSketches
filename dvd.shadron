@@ -1,0 +1,49 @@
+#version 420
+
+#include "library/colorSpaces.shadron"
+#include <perlin>
+#include <multisample>
+
+image Img = file() : map(clamp);
+param vec2 vel : range(-1, 1);
+param float scale : range(0, 1);
+
+// Pseudorandom function
+glsl float random(int seed, int salt) {
+    vec2 pCoord = mod(vec2(1749.1797*float(seed), 33.1178221*float(salt)), 1823.5355121);
+    return 0.5*(perlinNoise(pCoord)+1.0);
+}
+
+glsl vec2 bounce(vec2 pos) {
+    return (1-scale) * abs(mod(pos - 1, 2) - 1);
+}
+
+glsl vec4 dvdBouce(vec2 pos, float time) {
+    vec4 color;
+    vec2 shift = time*vel;
+    shift += 0.5;
+    int bouncesX = int(shift.x);
+    int bounces = int(shift.x) + int(shift.y);
+    color.rgb = hsv2rgb(vec3(
+        random(bounces, 1),
+        mix(0.5, 1.0, random(bounces, 5)),
+        mix(0.3, 0.7, random(bounces, 5))
+    ));
+    shift = bounce(shift);
+    pos -= shift;
+    pos /= scale;
+    if (mod(bouncesX, 2) > 0.5) {
+        pos.x = 1.0 - pos.x;
+    }
+    color.a = 1.0;
+    vec4 tex = texture(Img, pos);
+
+    vec3 background = vec3(0.1);
+    color.rgb = mix(background, 1-((1-color.rgb) * (1-tex.rgb)), tex.a);
+
+    return color;
+}
+
+animation Animation = glsl(multisampleAnimation<dvdBouce, 4, 1>, sizeof Img);
+export png_sequence(Animation, "frames/frame_?.png", 30, 60);
+
