@@ -1,0 +1,85 @@
+#include <multisample>
+
+#include "library/loopAnimation.shadron"
+#include "library/lerp.shadron"
+#include "library/complexNumbers.shadron"
+#include "library/random.shadron"
+
+
+image inputFile = file() : map(clamp);
+
+param float animationPeriod = 8 : logrange(0.1, 60);
+
+param float innerRadius = 0.25 : range(0, 0.5);
+param vec2 center = vec2(0.5);
+
+param float blendRadius = 0.1;
+
+glsl float end_scale = 2 * innerRadius;
+
+
+// coordinate transforms between in the smaller (inner) and larger (outer) rectangles
+glsl vec2 inner2outer(vec2 pos) {
+    vec2 centerDiff = pos - center;
+    vec2 fromOuterCenter = centerDiff / end_scale;
+    return fromOuterCenter + 0.5;
+}
+glsl vec2 outer2inner(vec2 pos) {
+    vec2 fromOuterCenter = pos - 0.5;
+    vec2 centerDiff = fromOuterCenter * end_scale;
+    return centerDiff + center;
+}
+
+
+glsl vec4 ianZoomAnimation(vec2 pos, float time) {
+    float scale = expLerp(1, end_scale, time/animationPeriod);
+    vec2 zoomCenter = pos;
+    for (int i=0; i<15; ++i) {
+        zoomCenter = outer2inner(zoomCenter);
+    }
+
+    pos -= zoomCenter;
+    pos *= scale;
+    pos += zoomCenter;
+
+    float inning;
+    for (int i=0; i<15; ++i) {
+        inning = max(abs(pos.x - center.x) / innerRadius, abs(pos.y - center.y) / innerRadius);
+        if (inning < 1) {
+            pos = inner2outer(pos);
+        }
+    }
+
+    float distToBorder = 1-2*max(abs(pos.x-.5), abs(pos.y-.5));
+    if (distToBorder < blendRadius) {
+        float ratio = distToBorder/blendRadius;
+        return lerp(texture(inputFile, outer2inner(pos)), texture(inputFile, pos), ratio);
+        // return vec4(ratio,0,0,1);
+    }
+
+
+    vec4 color = texture(inputFile, pos);
+    return color;
+}
+
+glsl float rand(vec2 co){
+    return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
+}
+
+param float noiseAmplitude;
+glsl vec4 addGrain(vec2 pos, float time) {
+    float grain = (rand(pos + time) - 0.5) * 2 * noiseAmplitude ;
+    vec3 color = ianZoomAnimation(pos, time).rgb;
+    color += grain;
+    return vec4(color, 1);
+}
+
+animation Animation = glsl(
+    multisampleAnimation<
+        loopAnimaion<addGrain, animationPeriod>,
+        4,
+        1,
+    >,
+    sizeof inputFile*.6);
+export png_sequence(Animation, "frames/frame_?.png", 30, animationPeriod);
+
