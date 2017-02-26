@@ -9,6 +9,7 @@ glsl float clamp01(float x) {
 
 // Returns a value in the range [a..b] given t [0..1].
 // Linearly interpolates through the exponent of a power.
+// Graph: https://www.desmos.com/calculator/gb6xpoesgy
 // Example use: expLerp(0.1, 10.0, 0.5) == 1.0
 glsl float expLerp(float a, float b, float t) {
     return exp(lerp(log(a), log(b), t));
