@@ -1,0 +1,20 @@
+#include <hsv.shadron>
+
+image Input = file();
+image Mask = file();
+
+glsl vec4 kanaya(vec2 pos, float time) {
+    // Get input pixel
+    vec4 orig = texture(Input, pos);
+    vec4 mask = texture(Mask, pos);
+
+    float h = hue(orig);
+    float s = saturation(orig);
+    float v = value(orig);
+    h += time;
+    vec3 color = mix(orig.rgb, hsv(h,s,v), 1-mask.a);
+    return vec4(color, 1);
+}
+
+animation Output = glsl(kanaya, sizeof(Input));
+export png_sequence(Output, "frames/????.png", 30, 1);
