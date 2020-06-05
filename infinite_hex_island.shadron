@@ -11,7 +11,8 @@ param float edge_wd = .05;
 param float node_r = .1;
 param float king_r = .2;
 
-param float fisheyeness = .2;
+param float fisheyeness = .1;
+param float grid_scale = 1.5;
 
 // Hexagon constants. btw, this is neat: https://hexagoncalculator.apphb.com/
 glsl const float sidelength = (2/3.) * sqrt(3);
@@ -34,24 +35,43 @@ glsl float pause_step(float x, float a, float b) {
     return g + f;
 }
 
+glsl vec2 fisheye(vec2 pos) {
+    // return pos * tan(length(pos)*TAU/4) / fisheyeness;
+    // return pos * (1/(1-length(pos))-1) / fisheyeness;
+    return normalize(pos) * (1 / (1-length(pos)) - 1);
+}
+glsl vec2 fisheye_inverse(vec2 pos) {
+    float y = length(pos);
+    return normalize(pos) * (y/(y+1));
+}
+
+glsl vec2 path_pos(float node_distance) {
+    vec2 king_pos = vec2(-halfside, 1);
+    king_pos.x += pause_step(node_distance, sidelength, sidelength);
+    king_pos += vec2(cos(TAU/6), sin(TAU/6)) * pause_step(node_distance-sidelength, sidelength, sidelength);
+    return king_pos;
+}
+
 glsl vec4 render(vec2 pos, float time) {
     pos = (pos - .5) * 2;
+
+    float node_distance = (time - (1/(3.*TAU))*sin(time*2*TAU))*(2*sidelength);
+    vec2 king_pos = path_pos(node_distance);
+
+    float dist_to_next_cycle = min(.5,distance(fisheye(king_pos), fisheye(path_pos(node_distance + 2*sidelength))));
+
+    pos *= 5 * dist_to_next_cycle;
+    float sd = length(pos) - (king_r * dist_to_next_cycle);
+    vec4 king = vec4(king_color, smoothstep(sd_smoothness*dist_to_next_cycle, -sd_smoothness*dist_to_next_cycle, sd));
+
+    vec2 camera_center = fisheye_inverse(king_pos);
+    pos += camera_center;
     if (length(pos) > 1) return vec4(back_color, 1);
-
-    float distance_travelled = (time - (1/(3.*TAU))*sin(time*2*TAU))*(2*sidelength);
-    // distance_travelled += sidelength*cos(distance_travelled*TAU);
-    vec2 king_pos = vec2(-halfside, 1);
-    king_pos.x += pause_step(distance_travelled, sidelength, sidelength);
-    king_pos += vec2(cos(TAU/6), sin(TAU/6)) * pause_step(distance_travelled-sidelength, sidelength, sidelength);
+    // pos += fisheye(king_pos);
+    pos = fisheye(pos);
 
 
-    pos *= tan(pow(length(pos), fisheyeness)*TAU/4);
-    pos *= 1.5;
-    pos += king_pos;
-
-
-    float sd = distance(pos, king_pos) - king_r;
-    vec4 king = vec4(king_color, smoothstep(sd_smoothness, -sd_smoothness, sd));
+    // float sd = distance(pos, king_pos) - king_r;
 
     // Repeat along rectangular sections.
     pos = mod(pos, vec2(2*ROOT3, 2));
@@ -84,5 +104,5 @@ glsl vec4 render(vec2 pos, float time) {
     return col;
 }
 
-animation Output = glsl(multisampleAnimation<render, 8, 1>, 1300, 1300);
-export png_sequence(Output, "frames/????.png", 30, 1);
+animation Output = glsl(multisampleAnimation<render, 8, 1>, 800, 800);
+export png_sequence(Output, "frames/????.png", 30, 10);
