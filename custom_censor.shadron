@@ -1,0 +1,17 @@
+parameter float t = 1;
+
+// animation foo = sequence("C:\\Users\\dom\\Videos\\Desktop\\fullframes\\*.png", 30);
+// animation foo = sequence("C:\\Users\\dom\\Documents\\Dry Cactus\\Poly Bridge 2\\Replays\\PB2-20200608_145643.mp4", 30);
+image foo = file("C:\\Users\\dom\\Videos\\Desktop\\fullframes\\0001.png");
+
+glsl vec4 censor(vec2 pos) {
+    vec4 sample = texture(foo, pos);
+    sample.r = 0;
+    return sample;
+}
+
+// animation MyAnimation = glsl(censor, sizeof foo);
+image censored_image = glsl(censor, sizeof foo / 2);
+
+export png_foreach(
+    censored_image, "frames/????.png") : foo("C:\\Users\\dom\\Videos\\Desktop\\fullframes\\????.png");
