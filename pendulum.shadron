@@ -11,11 +11,13 @@ param float simulation_speed = 30.0 : logrange(1.0, 1024.0);
 
 // State layout:
 // x - theta
-// y - thetadot
-// z - unused
-// w - unused
+// y - theta_dot
+// z - torque
+// w - cost
 
 vec4 initial_state(vec2 pos) {
+    pos = (pos - .5) * 2;
+
     return vec4(pos, 0, 1);
 }
 image InitialState = glsl(initial_state, 512, 512);
@@ -24,24 +26,50 @@ vec4 initialize(vec2 pos) {
     return texture(InitialState, pos);
 }
 
+float policy(float theta, float theta_dot) {
+    return 0;
+}
+
+float angle_normalize(float x) {  // Returns x but within -pi .. pi
+    x = mod(x, TAU);
+    if (x < 0) {
+        x += TAU;
+    }
+    x = (x <= PI)? x : x - TAU;
+    return x;
+}
+
+float square(float x) {
+    return x*x;
+}
+
 vec4 simulation(sampler2D self, vec2 pos) {
-    // Sample local cell
-    float liveSelf = 1.0-texture(self, pos).r;
-    // Sample and count neighbors
-    float liveNeighbors = 8.0;
-    liveNeighbors -= texture(self, pos+vec2(-1.0, -1.0)*shadron_PixelSize).r;
-    liveNeighbors -= texture(self, pos+vec2( 0.0, -1.0)*shadron_PixelSize).r;
-    liveNeighbors -= texture(self, pos+vec2(+1.0, -1.0)*shadron_PixelSize).r;
-    liveNeighbors -= texture(self, pos+vec2(-1.0,  0.0)*shadron_PixelSize).r;
-    liveNeighbors -= texture(self, pos+vec2(+1.0,  0.0)*shadron_PixelSize).r;
-    liveNeighbors -= texture(self, pos+vec2(-1.0, +1.0)*shadron_PixelSize).r;
-    liveNeighbors -= texture(self, pos+vec2( 0.0, +1.0)*shadron_PixelSize).r;
-    liveNeighbors -= texture(self, pos+vec2(+1.0, +1.0)*shadron_PixelSize).r;
-    // Decide whether to fill the cell depending on own state and number of live neighbors
-    return vec4(vec3(1.0-float(
-        (liveSelf >= 0.5 && liveNeighbors >= 1.5 && liveNeighbors < 3.5) ||
-        (liveSelf <  0.5 && liveNeighbors >= 2.5 && liveNeighbors < 3.5)
-    )), 1.0);
+    float max_speed = 8;
+    float max_torque = 2.;
+    float dt = .08;
+    float g = 10;
+    float m = 1;
+    float l = 1;
+    float last_torque = 0;
+
+    vec4 prev = texture(self, pos);
+    float theta = prev.x;
+    float theta_dot = prev.y;
+
+    float torque = policy(theta, theta_dot);
+    torque = clamp(torque, -max_torque, max_torque);
+    last_torque = torque;
+    float cost = square(angle_normalize(theta)) + .1 * square(theta_dot) + .001 * square(torque);
+
+    float newthdot = theta_dot + (-3 * g / (2 * l) * sin(theta + PI) + 3. / (m * square(l)) * torque) * dt;
+    float newth = theta + newthdot * dt;
+    newthdot = clamp(newthdot, -max_speed, max_speed);
+
+    theta = angle_normalize(newth);
+    theta_dot = newthdot;
+
+    cost = 1;
+    return vec4(theta, theta_dot, torque, cost);
 }
 
 feedback Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), update_rate(simulation_speed), filter(nearest);
@@ -96,6 +124,7 @@ vec4 render_torque(vec2 pos, float torque) {  // torque acepts -1..1
 }
 
 vec4 pendulum_and_torque(vec2 pos) {
+    // return texture(Simulation, pos);
     pos = (pos - .5) * 2.4;
 
     vec4 col = render_pendulum(pos, .1);
