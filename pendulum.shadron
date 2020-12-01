@@ -1,0 +1,109 @@
+#include <shapes>
+#include <math_constants>
+
+parameter float p_torque = .5 : range(-1, 1);
+
+
+
+// Speed of the simulation (steps per second)
+param float simulation_speed = 30.0 : logrange(1.0, 1024.0);
+
+
+// State layout:
+// x - theta
+// y - thetadot
+// z - unused
+// w - unused
+
+vec4 initial_state(vec2 pos) {
+    return vec4(pos, 0, 1);
+}
+image InitialState = glsl(initial_state, 512, 512);
+
+vec4 initialize(vec2 pos) {
+    return texture(InitialState, pos);
+}
+
+vec4 simulation(sampler2D self, vec2 pos) {
+    // Sample local cell
+    float liveSelf = 1.0-texture(self, pos).r;
+    // Sample and count neighbors
+    float liveNeighbors = 8.0;
+    liveNeighbors -= texture(self, pos+vec2(-1.0, -1.0)*shadron_PixelSize).r;
+    liveNeighbors -= texture(self, pos+vec2( 0.0, -1.0)*shadron_PixelSize).r;
+    liveNeighbors -= texture(self, pos+vec2(+1.0, -1.0)*shadron_PixelSize).r;
+    liveNeighbors -= texture(self, pos+vec2(-1.0,  0.0)*shadron_PixelSize).r;
+    liveNeighbors -= texture(self, pos+vec2(+1.0,  0.0)*shadron_PixelSize).r;
+    liveNeighbors -= texture(self, pos+vec2(-1.0, +1.0)*shadron_PixelSize).r;
+    liveNeighbors -= texture(self, pos+vec2( 0.0, +1.0)*shadron_PixelSize).r;
+    liveNeighbors -= texture(self, pos+vec2(+1.0, +1.0)*shadron_PixelSize).r;
+    // Decide whether to fill the cell depending on own state and number of live neighbors
+    return vec4(vec3(1.0-float(
+        (liveSelf >= 0.5 && liveNeighbors >= 1.5 && liveNeighbors < 3.5) ||
+        (liveSelf <  0.5 && liveNeighbors >= 2.5 && liveNeighbors < 3.5)
+    )), 1.0);
+}
+
+feedback Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), update_rate(simulation_speed), filter(nearest);
+
+
+// =========== Rendering ===========
+
+
+float inside(float signed_distance) {
+    return smoothstep(0, 0.0001, signed_distance);
+}
+
+vec4 blend(inout vec4 buffer, in vec4 overlay) {
+    buffer = vec4(mix(buffer.rgb, overlay.rgb, overlay.a), min(1, overlay.a+buffer.a));
+    return buffer;
+}
+
+vec4 render_pendulum(vec2 pos, float theta) {
+    vec4 col = vec4(0);
+    vec2 tip = vec2(-sin(theta), cos(theta));
+    col = mix(col, vec4(.7,0,0,1), inside(lineDistance(pos, vec2(0,0), tip, .2)));
+    col = mix(col, vec4(0,0,0,1), inside(circleDistance(pos, vec2(0,0), .04)));
+    return col;
+}
+
+float ring_distance(vec2 pos, float r, float half_width) {
+    return half_width-abs(r-length(pos));
+}
+
+vec4 render_torque(vec2 pos, float torque) {  // torque acepts -1..1
+    pos.x *= torque < 0? -1 : 1;
+    torque = abs(torque);
+
+    vec4 col = vec4(0);
+    float r = .8;
+    float half_width = .05;
+    float d = ring_distance(pos, r, half_width);
+    float theta_head = torque * PI * .8;
+    float theta_tail = theta_head - .8;
+    vec2 tip_head = (r-half_width) * vec2(-sin(theta_head), cos(theta_head));
+    // vec2 tip_tail = (r+half_width) * vec2(-sin(theta_tail), cos(theta_tail));
+    vec2 tip_tail = tip_head + vec2(-sin(theta_head-PI/2), cos(theta_head-PI/2));
+
+
+    d = min(d, halfPlaneDistance(pos, vec2(0), vec2(0,1)));
+    d = min(d, halfPlaneDistance(pos, vec2(0), -tip_head));
+    d = min(d, halfPlaneDistance(pos, tip_tail, tip_head));
+
+    col = mix(col, vec4(.4, .4, .4, 1), inside(d));
+    // col = mix(col, vec4(.8, .8, .8, 1), .5*inside(halfPlaneDistance(pos, tip_tail, tip_head)));
+    return col;
+}
+
+vec4 pendulum_and_torque(vec2 pos) {
+    pos = (pos - .5) * 2.4;
+
+    vec4 col = render_pendulum(pos, .1);
+    blend(col, render_torque(pos, p_torque));
+    return col;
+}
+
+image PendulumImage = glsl(pendulum_and_torque, 512, 512);
+
+
+
