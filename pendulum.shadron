@@ -72,8 +72,7 @@ vec4 simulation(sampler2D self, vec2 pos) {
     return vec4(theta, theta_dot, torque, cost);
 }
 
-feedback Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), update_rate(simulation_speed), filter(nearest);
-
+// feedback Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), update_rate(simulation_speed), filter(nearest);
 
 // =========== Rendering ===========
 
@@ -123,16 +122,23 @@ vec4 render_torque(vec2 pos, float torque) {  // torque acepts -1..1
     return col;
 }
 
-vec4 pendulum_and_torque(vec2 pos) {
-    // return texture(Simulation, pos);
-    pos = (pos - .5) * 2.4;
+feedback Simulation, PendulumImage {
+    Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize);
 
-    vec4 col = render_pendulum(pos, .1);
-    blend(col, render_torque(pos, p_torque));
-    return col;
-}
+    vec4 pendulum_and_torque(vec2 pos) {
+        vec4 sim = texture(Simulation, vec2(.5, .6));
+        float theta = sim.x;
+        float torque = sim.z;
 
-image PendulumImage = glsl(pendulum_and_torque, 512, 512);
+        pos = (pos-.5) * 2.8;
+        vec4 col = render_pendulum(pos, theta);
+        blend(col, render_torque(pos, torque));
+        // return vec4(pos,0,1);
+        return col;
+    }
+
+    PendulumImage = glsl(pendulum_and_torque, 512, 512) : initialize(initialize);
+} : update_rate(simulation_speed), filter(nearest);
 
 
 
