@@ -8,7 +8,7 @@ const float max_speed = 8;
 const float max_torque = 2.;
 
 // Speed of the simulation (steps per second)
-param float FPS = 80.0 : hidden;//logrange(1.0, 1024.0);
+param float FPS = 60.0 : hidden;//logrange(1.0, 1024.0);
 
 param float theta_render_shift = PI : range(0, .5);
 
@@ -35,7 +35,7 @@ event mouse_position(left_button, vec2 mousePos) {
     render_initial_pos = mousePos;
 }
 
-// ============== Simulation
+// ============== Simulation ==============
 
 vec4 initial_state(vec2 pos) {
     return vec4(
@@ -51,8 +51,9 @@ vec4 initialize(vec2 pos) {
 }
 
 float policy(float theta, float theta_dot) {
-    // return 0;
-    return -10.0 * theta + -1 * theta_dot;
+    if (abs(theta) > PI*.65) return theta_dot * 1000;
+    return -8.0 * theta -2 * theta_dot;
+    // return -10.0 * theta - 1 * theta_dot;
     // return -max_torque;
     // if (abs(theta) < .1) return -8*theta;
     // return -80. * theta;
@@ -72,7 +73,7 @@ float square(float x) {
 
 
 vec4 simulation(sampler2D self, vec2 pos) {
-    float dt = .05;
+    float dt = .05 * .5;
     float g = 10;
     float m = 1;
     float l = 1;
