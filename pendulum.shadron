@@ -4,15 +4,11 @@
 #include <math_constants>
 
 
-parameter float p_torque = .5 : range(-1, 1);
-
 const float max_speed = 8;
 const float max_torque = 2.;
 
-
-
 // Speed of the simulation (steps per second)
-param float simulation_speed = 30.0 : logrange(1.0, 1024.0);
+param float FPS = 80.0 : hidden;//logrange(1.0, 1024.0);
 
 
 // State layout:
@@ -67,7 +63,7 @@ float square(float x) {
 }
 
 vec4 simulation(sampler2D self, vec2 pos) {
-    float dt = .08;
+    float dt = .05;
     float g = 10;
     float m = 1;
     float l = 1;
@@ -98,7 +94,7 @@ vec4 simulation(sampler2D self, vec2 pos) {
     );
 }
 
-// feedback Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), update_rate(simulation_speed), filter(nearest);
+// feedback Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), update_rate(FPS), filter(nearest);
 
 // =========== Rendering ===========
 
@@ -152,10 +148,14 @@ feedback Simulation, SimulationRender, PendulumImage {
     Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), full_range(true) , hidden;
 
     vec4 simulation_render(vec2 pos) {
+        // pos += vec2(.5, 0);
         vec4 sim = texture(Simulation, pos);
-        if (pos.x == render_initial_pos.x) return vec4(1,1,1,1);
-        if (pos.y == render_initial_pos.y) return vec4(1,1,1,1);
-        return sim;
+        float should_draw_indicator = mod(
+            float(pos.x == render_initial_pos.x) + float(pos.y == render_initial_pos.y),
+            2
+        );
+        // if (should_draw_indicator>.1) return ;
+        return blend(sim, vec4(vec3(.1), .4*should_draw_indicator));
     }
     SimulationRender = glsl(simulation_render, sizeof(Simulation)) : initialize(initialize);
 
@@ -174,7 +174,7 @@ feedback Simulation, SimulationRender, PendulumImage {
         return col;
     }
     PendulumImage = glsl(pendulum_and_torque, 512, 512) : initialize(initialize);
-} : update_rate(simulation_speed), filter(nearest);
+} : update_rate(FPS), filter(nearest);
 
 
 
