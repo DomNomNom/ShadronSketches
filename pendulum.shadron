@@ -28,7 +28,9 @@ float decode_cost(float cost) { return cost-1; }
 var vec2 render_initial_pos = vec2(.25, .5);
 
 event mouse_press(left_button, vec2 mousePos) {
-    // if (distance(itemPos, mousePos) < r)
+    render_initial_pos = mousePos;
+}
+event mouse_position(left_button, vec2 mousePos) {
     render_initial_pos = mousePos;
 }
 
