@@ -1,7 +1,14 @@
+#version 330
+// #extension GL_ARB_gpu_shader_fp64
+
 #include <shapes>
 #include <math_constants>
 
+
 parameter float p_torque = .5 : range(-1, 1);
+
+const float max_speed = 8;
+const float max_torque = 2.;
 
 
 
@@ -10,15 +17,21 @@ param float simulation_speed = 30.0 : logrange(1.0, 1024.0);
 
 
 // State layout:
-// x - theta
+// x - theta     // clockwise with 0=upright.
 // y - theta_dot
 // z - torque
 // w - cost
+float encode_theta(float theta) { return (theta+PI) / TAU; }
+float decode_theta(float theta) { return (theta*TAU) - PI; }
+float encode_theta_dot(float theta_dot) { return (theta_dot+max_speed) / (2*max_speed); }
+float decode_theta_dot(float theta_dot) { return (theta_dot*(2*max_speed)) - max_speed; }
+float encode_torque(float torque) { return (torque+max_torque) / (2*max_torque); }
+float decode_torque(float torque) { return (torque*(2*max_torque)) - max_torque; }
+float encode_cost(float cost) { return cost+1; }
+float decode_cost(float cost) { return cost-1; }
 
 vec4 initial_state(vec2 pos) {
-    pos = (pos - .5) * 2;
-
-    return vec4(pos, 0, 1);
+    return vec4(pos, encode_torque(0), encode_cost(0));
 }
 image InitialState = glsl(initial_state, 512, 512);
 
@@ -28,13 +41,15 @@ vec4 initialize(vec2 pos) {
 
 float policy(float theta, float theta_dot) {
     return 0;
+    // return -80. * theta + 0* theta_dot;
+    // return -max_torque;
+    if (abs(theta) < .1) return -8*theta;
+    return -80. * theta;
 }
 
-float angle_normalize(float x) {  // Returns x but within -pi .. pi
+float angle_normalize(float x) {  // Returns angle x but within -pi .. pi
     x = mod(x, TAU);
-    if (x < 0) {
-        x += TAU;
-    }
+    x = (x < 0)? x+TAU : x; // if (x < 0) {  x += TAU;  }
     x = (x <= PI)? x : x - TAU;
     return x;
 }
@@ -44,21 +59,17 @@ float square(float x) {
 }
 
 vec4 simulation(sampler2D self, vec2 pos) {
-    float max_speed = 8;
-    float max_torque = 2.;
     float dt = .08;
     float g = 10;
     float m = 1;
     float l = 1;
-    float last_torque = 0;
 
     vec4 prev = texture(self, pos);
-    float theta = prev.x;
-    float theta_dot = prev.y;
+    float theta = decode_theta(prev.x);
+    float theta_dot = decode_theta_dot(prev.y);
 
     float torque = policy(theta, theta_dot);
     torque = clamp(torque, -max_torque, max_torque);
-    last_torque = torque;
     float cost = square(angle_normalize(theta)) + .1 * square(theta_dot) + .001 * square(torque);
 
     float newthdot = theta_dot + (-3 * g / (2 * l) * sin(theta + PI) + 3. / (m * square(l)) * torque) * dt;
@@ -69,7 +80,14 @@ vec4 simulation(sampler2D self, vec2 pos) {
     theta_dot = newthdot;
 
     cost = 1;
-    return vec4(theta, theta_dot, torque, cost);
+    // theta = PI;
+    // theta_dot = 0;
+    return vec4(
+        encode_theta(theta),
+        encode_theta_dot(theta_dot),
+        encode_torque(torque),
+        encode_cost(cost)
+    );
 }
 
 // feedback Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), update_rate(simulation_speed), filter(nearest);
@@ -106,11 +124,11 @@ vec4 render_torque(vec2 pos, float torque) {  // torque acepts -1..1
     float r = .8;
     float half_width = .05;
     float d = ring_distance(pos, r, half_width);
-    float theta_head = torque * PI * .8;
-    float theta_tail = theta_head - .8;
-    vec2 tip_head = (r-half_width) * vec2(-sin(theta_head), cos(theta_head));
-    // vec2 tip_tail = (r+half_width) * vec2(-sin(theta_tail), cos(theta_tail));
-    vec2 tip_tail = tip_head + vec2(-sin(theta_head-PI/2), cos(theta_head-PI/2));
+    float head = torque / max_torque * PI * .8;  // angle of the tip
+    float tail = head - .8;
+    vec2 tip_head = (r-half_width) * vec2(-sin(head), cos(head));
+    // vec2 tip_tail = (r+half_width) * vec2(-sin(tail), cos(tail));
+    vec2 tip_tail = tip_head + vec2(-sin(head-PI/2), cos(head-PI/2));
 
 
     d = min(d, halfPlaneDistance(pos, vec2(0), vec2(0,1)));
@@ -123,20 +141,18 @@ vec4 render_torque(vec2 pos, float torque) {  // torque acepts -1..1
 }
 
 feedback Simulation, PendulumImage {
-    Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize);
+    Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), full_range(true);
 
     vec4 pendulum_and_torque(vec2 pos) {
-        vec4 sim = texture(Simulation, vec2(.5, .6));
-        float theta = sim.x;
-        float torque = sim.z;
+        vec4 sim = texture(Simulation, vec2(.75, .0));
+        float theta = decode_theta(sim.x);
+        float torque = decode_torque(sim.z);
 
         pos = (pos-.5) * 2.8;
         vec4 col = render_pendulum(pos, theta);
         blend(col, render_torque(pos, torque));
-        // return vec4(pos,0,1);
         return col;
     }
-
     PendulumImage = glsl(pendulum_and_torque, 512, 512) : initialize(initialize);
 } : update_rate(simulation_speed), filter(nearest);
 
