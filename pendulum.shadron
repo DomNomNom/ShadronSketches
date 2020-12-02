@@ -51,8 +51,8 @@ vec4 initialize(vec2 pos) {
 }
 
 float policy(float theta, float theta_dot) {
-    if (abs(theta) > PI*.65) return theta_dot * 1000;
-    return -8.0 * theta -2 * theta_dot;
+    if (abs(theta) > PI*.65) return theta_dot * 1000;  // if we're low on energy, give a push
+    return -8.0 * theta -2 * theta_dot; // acceleration towards being still at the top.
     // return -10.0 * theta - 1 * theta_dot;
     // return -max_torque;
     // if (abs(theta) < .1) return -8*theta;
