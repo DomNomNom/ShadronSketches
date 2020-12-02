@@ -30,6 +30,9 @@ float decode_torque(float torque) { return (torque*(2*max_torque)) - max_torque;
 float encode_cost(float cost) { return cost+1; }
 float decode_cost(float cost) { return cost-1; }
 
+param float render_initial_theta = TAU/4 : range(decode_theta(0), decode_theta(1));
+param float render_initial_theta_dot = 0 : range(decode_theta_dot(0), decode_theta_dot(1));
+
 vec4 initial_state(vec2 pos) {
     return vec4(pos, encode_torque(0), encode_cost(0));
 }
@@ -144,7 +147,10 @@ feedback Simulation, PendulumImage {
     Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), full_range(true);
 
     vec4 pendulum_and_torque(vec2 pos) {
-        vec4 sim = texture(Simulation, vec2(.75, .0));
+        vec4 sim = texture(Simulation, vec2(
+            encode_theta(render_initial_theta),
+            encode_theta_dot(render_initial_theta_dot)
+        ));
         float theta = decode_theta(sim.x);
         float torque = decode_torque(sim.z);
 
