@@ -8,9 +8,9 @@ const float max_speed = 8;
 const float max_torque = 2.;
 
 // Speed of the simulation (steps per second)
-param float FPS = 60.0 : hidden;//logrange(1.0, 1024.0);
+param float FPS = 60.0 : hidden;  // logrange(1.0, 1024.0);
 
-param float theta_render_shift = PI : range(0, .5);
+param float theta_render_shift = .5 : range(0, .5);
 
 // State layout:
 // x - theta     // clockwise with 0=upright.
@@ -44,15 +44,38 @@ vec4 initial_state(vec2 pos) {
         encode_cost(0)
     );
 }
-image InitialState = glsl(initial_state, 512, 512);
+image InitialState = glsl(initial_state, 512, 512) : hidden;
 
-vec4 initialize(vec2 pos) {
-    return texture(InitialState, pos);
+vec2 hash22(vec2 p) {
+    p = vec2( dot(p,vec2(127.1,311.7)),
+              dot(p,vec2(269.5,183.3)));
+
+    return fract(sin(p)*43758.5453123);
 }
+vec4 initial_state_shuffled(vec2 pos) {
+    return initial_state(hash22(pos));
+}
+image InitialStateShuffled = glsl(initial_state_shuffled, sizeof(InitialState)) : hidden;
 
-float policy(float theta, float theta_dot) {
-    if (abs(theta) > PI*.65) return theta_dot * 1000;  // if we're low on energy, give a push
-    return -8.0 * theta -2 * theta_dot; // acceleration towards being still at the top.
+
+var float params_0 = PI*.65;
+var float params_1 = 1000;
+var float params_2 = -8.0;
+var float params_3 = -2;
+
+#define PARAM_COUNT 4
+glsl float[] params = float[PARAM_COUNT](
+    params_0,
+    params_1,
+    params_2,
+    params_3
+);
+
+
+
+float policy(float theta, float theta_dot, float[PARAM_COUNT] p) {
+    if (abs(theta) > p[0]) return theta_dot * p[1];  // if we're low on energy, give a push
+    return p[2] * theta  + p[3] * theta_dot; // acceleration towards being still at the top.
     // return -10.0 * theta - 1 * theta_dot;
     // return -max_torque;
     // if (abs(theta) < .1) return -8*theta;
@@ -72,18 +95,12 @@ float square(float x) {
 
 
 
-vec4 simulation(sampler2D self, vec2 pos) {
+vec4 simulation_step(float theta, float theta_dot, float torque, float prev_cost) {
     float dt = .05 * .5;
     float g = 10;
     float m = 1;
     float l = 1;
 
-    vec4 prev = texture(self, pos);
-    float theta = decode_theta(prev.x);
-    float theta_dot = decode_theta_dot(prev.y);
-    float prev_cost = decode_cost(prev.w);
-
-    float torque = policy(theta, theta_dot);
     torque = clamp(torque, -max_torque, max_torque);
     float cost = square(angle_normalize(theta)) + .1 * square(theta_dot) + .001 * square(torque);
 
@@ -103,6 +120,19 @@ vec4 simulation(sampler2D self, vec2 pos) {
     );
 }
 
+vec4 single_param_sim_step(sampler2D prev_states, vec2 pos) {
+    vec4 prev = texture(prev_states, pos);
+    float theta = decode_theta(prev.x);
+    float theta_dot = decode_theta_dot(prev.y);
+    float prev_cost = decode_cost(prev.w);
+
+    float torque = policy(theta, theta_dot, params);
+    return simulation_step(theta, theta_dot, torque, prev_cost);
+}
+
+// vec4 multi_param_sim_step(sampler2D prev_states, vec2 pos) {
+//     return simulation_step(prev_states, pos, );
+// }
 
 // =========== Rendering ===========
 
@@ -165,14 +195,15 @@ vec3 heat_color(float x) {
 }
 
 feedback Simulation, SimulationRender, RewardRender, PendulumImage {
-    Simulation = glsl(simulation, sizeof(InitialState)) : initialize(initialize), full_range(true) , hidden;
+    Simulation = glsl(single_param_sim_step, sizeof(InitialState)) : initialize(initial_state), full_range(true) , hidden;
+    // CrossParamSimulation = glsl(cross_param_simulation, sizeof(InitialState)) : initialize(initial_state), full_range(true) , hidden;
 
     vec4 simulation_render(vec2 pos) {
         vec4 sim = texture(Simulation, pos);
         sim.x -= theta_render_shift;
         return blend(sim, render_initial_pos_indicator(pos));
     }
-    SimulationRender = glsl(simulation_render, sizeof(Simulation)) : initialize(initialize);
+    SimulationRender = glsl(simulation_render, sizeof(Simulation)) : initialize(initial_state);
 
     vec4 reward_render(vec2 pos) {
         vec4 sim = texture(Simulation, pos);
@@ -180,14 +211,10 @@ feedback Simulation, SimulationRender, RewardRender, PendulumImage {
         vec4 col = vec4(heat_color(.1*r), 1);
         return blend(col, render_initial_pos_indicator(pos));
     }
-    RewardRender = glsl(reward_render, sizeof(Simulation)) : initialize(initialize);
+    RewardRender = glsl(reward_render, sizeof(Simulation)) : initialize(initial_state);
 
     vec4 pendulum_and_torque(vec2 pos) {
-        vec4 sim = texture(Simulation, vec2(
-            render_initial_pos
-            // encode_theta(render_initial_theta),
-            // encode_theta_dot(render_initial_theta_dot)
-        ));
+        vec4 sim = texture(Simulation, render_initial_pos);
         float theta = decode_theta(sim.x);
         float torque = decode_torque(sim.z);
 
@@ -196,7 +223,7 @@ feedback Simulation, SimulationRender, RewardRender, PendulumImage {
         blend(col, render_torque(pos, torque));
         return col;
     }
-    PendulumImage = glsl(pendulum_and_torque, 512, 512) : initialize(initialize);
+    PendulumImage = glsl(pendulum_and_torque, 512, 512) : initialize(initial_state);
 } : update_rate(FPS), filter(nearest);
 
 
