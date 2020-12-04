@@ -29,6 +29,36 @@ float decode_cost(float cost) { return cost-1; }
 
 // ============== Simulation ==============
 
+#define PARAM_COUNT 4
+param ivec2 param_index = vec2(1, 3): range(0, PARAM_COUNT-1);
+var vec2 render_initial_pos = vec2(.25, .5);
+
+var int should_restart = 0;
+
+param vec2 parameter_bounds_0 = vec2(-PI, PI);
+param vec2 parameter_bounds_1 = vec2(-2, 2);
+param vec2 parameter_bounds_2 = vec2(-20, 0);
+param vec2 parameter_bounds_3 = vec2(-5, 0);
+
+var float parameter_value_0 = PI*.5;
+var float parameter_value_1 = 1;
+var float parameter_value_2 = -20.0;
+var float parameter_value_3 = -5;
+
+glsl vec2[] parameter_bounds = vec2[PARAM_COUNT](
+    parameter_bounds_0,
+    parameter_bounds_1,
+    parameter_bounds_2,
+    parameter_bounds_3
+);
+glsl float[] params = float[PARAM_COUNT](
+    parameter_value_0,
+    parameter_value_1,
+    parameter_value_2,
+    parameter_value_3
+);
+
+
 vec4 initial_state(vec2 pos) {
     return vec4(
         pos,
@@ -49,61 +79,18 @@ vec4 initial_state_shuffled(vec2 pos) {
 }
 image InitialStateShuffled = glsl(initial_state_shuffled, sizeof(InitialState)) : hidden;
 
-#define PARAM_COUNT 4
-param ivec2 param_index = vec2(1, 3): range(0, PARAM_COUNT-1);
 
-param vec2 parameter_bounds_0 = vec2(0, PI);
-param vec2 parameter_bounds_1 = vec2(0, 2);
-param vec2 parameter_bounds_2 = vec2(-20, 0);
-param vec2 parameter_bounds_3 = vec2(-5, 0);
-
-var float parameter_value_0 = PI*.65;
-var float parameter_value_1 = 1;
-var float parameter_value_2 = -8.0;
-var float parameter_value_3 = -2;
-
-glsl vec2[] parameter_bounds = vec2[PARAM_COUNT](
-    parameter_bounds_0,
-    parameter_bounds_1,
-    parameter_bounds_2,
-    parameter_bounds_3
-);
-glsl float[] params = float[PARAM_COUNT](
-    parameter_value_0,
-    parameter_value_1,
-    parameter_value_2,
-    parameter_value_3
-);
-
-
-var int mouse_select_state = 1;  // 1 = parameter space, 2 = single initial pos space
-var vec2 render_initial_pos = vec2(.25, .5);
-
-void handle_mouse(vec2 mouse_pos) {
-    if (mouse_select_state == 2)  {
-        render_initial_pos = mouse_pos;
-        return;
-    }
-    switch(param_index.x) {
-        case 0: parameter_value_0 = mix(parameter_bounds_0.x, parameter_bounds_0.y, mouse_pos.x); break;
-        case 1: parameter_value_1 = mix(parameter_bounds_1.x, parameter_bounds_1.y, mouse_pos.x); break;
-        case 2: parameter_value_2 = mix(parameter_bounds_2.x, parameter_bounds_2.y, mouse_pos.x); break;
-        case 3: parameter_value_3 = mix(parameter_bounds_3.x, parameter_bounds_3.y, mouse_pos.x); break;
-    }
-    switch(param_index.y) {
-        case 0: parameter_value_0 = mix(parameter_bounds_0.x, parameter_bounds_0.y, mouse_pos.y); break;
-        case 1: parameter_value_1 = mix(parameter_bounds_1.x, parameter_bounds_1.y, mouse_pos.y); break;
-        case 2: parameter_value_2 = mix(parameter_bounds_2.x, parameter_bounds_2.y, mouse_pos.y); break;
-        case 3: parameter_value_3 = mix(parameter_bounds_3.x, parameter_bounds_3.y, mouse_pos.y); break;
-    }
-}
-event mouse_press(left_button) = handle_mouse;
-event mouse_position(left_button) = handle_mouse;
-event press(1) { mouse_select_state = 1; }
-event press(2) { mouse_select_state = 2; }
+// event mouse_press(left_button) = handle_mouse;
+// event mouse_position(left_button) = handle_mouse;
+// event press(1) { mouse_select_state = 1; }
+// event press(2) { mouse_select_state = 22; }
 float policy(float theta, float theta_dot, float[PARAM_COUNT] p) {
+
     if (abs(theta) > p[0]) return theta_dot * p[1];  // if we're low on energy, give a push
     return p[2] * theta  + p[3] * theta_dot; // acceleration towards being still at the top.
+
+    // if (cos(theta) < 0) return theta_dot;  // if we're low on energy, give a push
+    // return -10 * sin(theta)  - 5 * theta_dot; // acceleration towards being still at the top.
     // return -10.0 * theta - 1 * theta_dot;
     // return -max_torque;
     // if (abs(theta) < .1) return -8*theta;
@@ -150,6 +137,7 @@ vec4 simulation_step(float theta, float theta_dot, float torque, float prev_cost
 
 vec4 single_param_sim_step(sampler2D prev_states, vec2 pos) {
     vec4 prev = texture(prev_states, pos);
+    if (should_restart>0) prev = initial_state(pos);
     float theta = decode_theta(prev.x);
     float theta_dot = decode_theta_dot(prev.y);
     float prev_cost = decode_cost(prev.w);
@@ -158,26 +146,13 @@ vec4 single_param_sim_step(sampler2D prev_states, vec2 pos) {
     return simulation_step(theta, theta_dot, torque, prev_cost);
 }
 
-float unmix(float a, float b, float x) {
-    // x = (1-t) * a + t*b;
-    // x =  a -t*a + t*b;
-    // x-a = t*-a + t*b
-    // x-a = t*(b-a)
-    // t = (x-a) / (b-a)
-    return (x-a) / (b-a);
-}
 vec2 unmix(vec2 a, vec2 b, vec2 x) {
-    // x = (1-t) * a + t*b;
-    // x =  a -t*a + t*b;
-    // x-a = t*-a + t*b
-    // x-a = t*(b-a)
-    // t = (x-a) / (b-a)
     return (x-a) / (b-a);
 }
-
 
 vec4 cross_param_simulation(sampler2D prev_states, vec2 pos) {
     vec4 prev = texture(prev_states, pos);
+    if (should_restart>0) prev = initial_state_shuffled(pos);
     float theta = decode_theta(prev.x);
     float theta_dot = decode_theta_dot(prev.y);
     float prev_cost = decode_cost(prev.w);
@@ -186,7 +161,6 @@ vec4 cross_param_simulation(sampler2D prev_states, vec2 pos) {
     vec2 bx = parameter_bounds[param_index.x];  adjusted_params[param_index.x] = mix(bx.x, bx.y, pos.x);
     vec2 by = parameter_bounds[param_index.y];  adjusted_params[param_index.y] = mix(by.x, by.y, pos.y);
     float torque = policy(theta, theta_dot, adjusted_params);
-    // for (int i=0; i<)
     return simulation_step(theta, theta_dot, torque, prev_cost);
 }
 
@@ -308,3 +282,30 @@ feedback CrossParamSimulation, CrossParamRewards, SingleParamSimulation, SingleP
 
 
 
+void handle_mouse_single_parameter(vec2 mouse_pos) {
+        render_initial_pos = mouse_pos;
+}
+event mouse_press(   SingleParamSimulationRender, left_button) = handle_mouse_single_parameter;
+event mouse_position(SingleParamSimulationRender, left_button) = handle_mouse_single_parameter;
+event mouse_press(   SingleParamRewardRender,     left_button) = handle_mouse_single_parameter;
+event mouse_position(SingleParamRewardRender,     left_button) = handle_mouse_single_parameter;
+
+void handle_mouse_cross_parameter(vec2 mouse_pos) {
+    switch(param_index.x) {
+        case 0: parameter_value_0 = mix(parameter_bounds_0.x, parameter_bounds_0.y, mouse_pos.x); break;
+        case 1: parameter_value_1 = mix(parameter_bounds_1.x, parameter_bounds_1.y, mouse_pos.x); break;
+        case 2: parameter_value_2 = mix(parameter_bounds_2.x, parameter_bounds_2.y, mouse_pos.x); break;
+        case 3: parameter_value_3 = mix(parameter_bounds_3.x, parameter_bounds_3.y, mouse_pos.x); break;
+    }
+    switch(param_index.y) {
+        case 0: parameter_value_0 = mix(parameter_bounds_0.x, parameter_bounds_0.y, mouse_pos.y); break;
+        case 1: parameter_value_1 = mix(parameter_bounds_1.x, parameter_bounds_1.y, mouse_pos.y); break;
+        case 2: parameter_value_2 = mix(parameter_bounds_2.x, parameter_bounds_2.y, mouse_pos.y); break;
+        case 3: parameter_value_3 = mix(parameter_bounds_3.x, parameter_bounds_3.y, mouse_pos.y); break;
+    }
+    should_restart = 2;
+}
+event mouse_press(   CrossParamRewards, left_button) = handle_mouse_cross_parameter;
+event mouse_position(CrossParamRewards, left_button) = handle_mouse_cross_parameter;
+void on_cross_update() {should_restart -= 1;}
+event update() = on_cross_update;
