@@ -280,7 +280,18 @@ feedback CrossParamSimulation, CrossParamRewards, SingleParamSimulation, SingleP
     PendulumImage = glsl(pendulum_and_torque, 512, 512) : initialize(initial_state);
 } : update_rate(FPS), filter(nearest);
 
+vec4 policy_render(vec2 pos) {
+    float torque = policy(
+        decode_theta(pos.x),
+        dezacode_theta_dot(pos.y),
+        params
+    );
+    torque = clamp(torque, -max_torque, max_torque);
+    torque /= max_torque;
 
+    return vec4(torque, 0, -torque, 1);
+}
+image PolicyRender = glsl(policy_render, sizeof(InitialState));
 
 void handle_mouse_single_parameter(vec2 mouse_pos) {
         render_initial_pos = mouse_pos;
