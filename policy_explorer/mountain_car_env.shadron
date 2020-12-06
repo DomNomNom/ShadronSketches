@@ -49,16 +49,30 @@ struct EnvParameter {
     float max;
 };
 var EnvParameter env_param_0 = EnvParameter(-10, 10, 100);
-var EnvParameter env_param_1 = EnvParameter(-10, 0, 10);
+var EnvParameter env_param_1 = EnvParameter(-1, 55, 1000);
 var EnvParameter env_param_2 = EnvParameter(-1, -.6, 0);
 var EnvParameter env_param_3 = EnvParameter(-0,  .6, 1);
+
+float policy(float pos, float vel, float[POLICY_PARAM_COUNT] p) {
+    // return sign(vel);
+    // return clamp(vel*20, -1, 1);
+    float potential = sin(3 * pos) + 1 + p[1]* vel * vel;
+    if (potential > p[3] && vel>0) return 1;
+    return sign(-vel)*p[2];
+    // return clamp(vel*p[0], p[2], p[3]);
+
+    float action;
+    action = vel*p[0] + p[1]*(pos-goal_position);
+
+    return clamp(action, -1, 1);
+}
+
 glsl EnvParameter[] env_params = EnvParameter[POLICY_PARAM_COUNT](
     env_param_0,
     env_param_1,
     env_param_2,
     env_param_3
 );
-
 vec4 initial_state(vec2 pos) {
     return vec4(
         pos,
@@ -79,21 +93,7 @@ vec4 initial_state_shuffled(vec2 pos) {
 image InitialStateShuffled = glsl(initial_state_shuffled, sizeof(InitialState)) : hidden;
 
 
-// event mouse_press(left_button) = handle_mouse;
-// event mouse_position(left_button) = handle_mouse;
-// event press(1) { mouse_select_state = 1; }
-// event press(2) { mouse_select_state = 22; }
-float policy(float pos, float vel, float[POLICY_PARAM_COUNT] p) {
-    // return vel*14;
-    // return clamp(vel*20, -1, 1);
 
-    return clamp(vel*p[0], p[2], p[3]);
-
-    float action;
-    action = vel*p[0] + p[1]*(pos-goal_position);
-
-    return clamp(action, -1, 1);
-}
 
 float angle_normalize(float x) {  // Returns angle x but within -pi .. pi
     x = mod(x, TAU);
@@ -251,7 +251,7 @@ vec3 reward_color(float episode_reward, float episodes_reward) {
     episode_reward *= 1.0;
     episodes_reward *= .1;
     if (episodes_reward <= 0)  return 1-exp2(-vec3(0, 0, -episode_reward));
-    return 1-exp2(-vec3(.1*episodes_reward, episodes_reward-10., episodes_reward-80.));
+    return 1-exp2(-.2*vec3(episodes_reward, episodes_reward-6., episodes_reward-12.));
 }
 float mountain_height(float x) {
     return (sin(3 * x) + 1) * .33;
