@@ -188,7 +188,7 @@ float ring_distance(vec2 pos, float r, float half_width) {
     return half_width-abs(r-length(pos));
 }
 
-vec4 render_torque(vec2 pos, float torque) {  // torque acepts -1..1
+vec4 render_torque(vec2 pos, float torque) {
     pos.x *= torque < 0? -1 : 1;
     torque = abs(torque);
     torque /= max_torque;
