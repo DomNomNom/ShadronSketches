@@ -46,7 +46,6 @@ var EnvParameter env_param_0 = EnvParameter(-PI, PI*.5, PI);
 var EnvParameter env_param_1 = EnvParameter(-2,  1,     2);
 var EnvParameter env_param_2 = EnvParameter(-20, -20.0, 0);
 var EnvParameter env_param_3 = EnvParameter(-5,  -5,    0);
-
 glsl EnvParameter[] env_params = EnvParameter[POLICY_PARAM_COUNT](
     env_param_0,
     env_param_1,
@@ -192,15 +191,16 @@ float ring_distance(vec2 pos, float r, float half_width) {
 vec4 render_torque(vec2 pos, float torque) {  // torque acepts -1..1
     pos.x *= torque < 0? -1 : 1;
     torque = abs(torque);
+    torque /= max_torque;
+    torque = pow(torque, .2);
 
     vec4 col = vec4(0);
     float r = .8;
     float half_width = .05;
     float d = ring_distance(pos, r, half_width);
-    float head = torque / max_torque * PI * .8;  // angle of the tip
+    float head = torque * PI * .8;  // angle of the tip
     float tail = head - .8;
     vec2 tip_head = (r-half_width) * vec2(-sin(head), cos(head));
-    // vec2 tip_tail = (r+half_width) * vec2(-sin(tail), cos(tail));
     vec2 tip_tail = tip_head + vec2(-sin(head-PI/2), cos(head-PI/2));
 
 
@@ -209,7 +209,6 @@ vec4 render_torque(vec2 pos, float torque) {  // torque acepts -1..1
     d = min(d, halfPlaneDistance(pos, tip_tail, tip_head));
 
     col = mix(col, vec4(.4, .4, .4, 1), inside(d));
-    // col = mix(col, vec4(.8, .8, .8, 1), .5*inside(halfPlaneDistance(pos, tip_tail, tip_head)));
     return col;
 }
 
