@@ -48,10 +48,10 @@ struct EnvParameter {
     float val;
     float max;
 };
-var EnvParameter env_param_0 = EnvParameter(-10, 0, 100);
+var EnvParameter env_param_0 = EnvParameter(-10, 10, 100);
 var EnvParameter env_param_1 = EnvParameter(-10, 0, 10);
-var EnvParameter env_param_2 = EnvParameter(-10, 0, 10);
-var EnvParameter env_param_3 = EnvParameter(-10, 0, 10);
+var EnvParameter env_param_2 = EnvParameter(-1, -.6, 0);
+var EnvParameter env_param_3 = EnvParameter(-0,  .6, 1);
 glsl EnvParameter[] env_params = EnvParameter[POLICY_PARAM_COUNT](
     env_param_0,
     env_param_1,
@@ -62,7 +62,7 @@ glsl EnvParameter[] env_params = EnvParameter[POLICY_PARAM_COUNT](
 vec4 initial_state(vec2 pos) {
     return vec4(
         pos,
-        encode_action(0),
+        encode_reward(0),
         encode_reward(0)
     );
 }
@@ -84,17 +84,15 @@ image InitialStateShuffled = glsl(initial_state_shuffled, sizeof(InitialState)) 
 // event press(1) { mouse_select_state = 1; }
 // event press(2) { mouse_select_state = 22; }
 float policy(float pos, float vel, float[POLICY_PARAM_COUNT] p) {
+    // return vel*14;
+    // return clamp(vel*20, -1, 1);
+
+    return clamp(vel*p[0], p[2], p[3]);
+
     float action;
     action = vel*p[0] + p[1]*(pos-goal_position);
 
     return clamp(action, -1, 1);
-
-    // if (cos(theta) < 0) return theta_dot;  // if we're low on energy, give a push
-    // return -10 * sin(theta)  - 5 * theta_dot; // acceleration towards being still at the top.
-    // return -10.0 * theta - 1 * theta_dot;
-    // return -max_torque;
-    // if (abs(theta) < .1) return -8*theta;
-    // return -80. * theta;
 }
 
 float angle_normalize(float x) {  // Returns angle x but within -pi .. pi
@@ -110,7 +108,7 @@ float square(float x) {
 
 
 
-vec4 simulation_step(float position, float velocity, float action, float prev_reward) {
+void simulation_step(in float action, inout float position, inout float velocity, out bool done, out float reward) {
     float force = min(max(action, min_action), max_action);
 
     velocity += force * power - 0.0025 * cos(3 * position);
@@ -121,20 +119,12 @@ vec4 simulation_step(float position, float velocity, float action, float prev_re
     if (position < min_position) position = min_position;
     if (position == min_position && velocity < 0) velocity = 0;
 
-    float reward = 0;
-    bool done = position >= goal_position && velocity >= goal_velocity;
+    done = position >= goal_position && velocity >= goal_velocity;
+    reward = 0;
     if (done) {
         reward = 100.0;
     }
     reward -= pow(action, 2) * 0.1;
-
-    reward = mix(prev_reward, reward, .01);
-    return vec4(
-        encode_pos(position),
-        encode_vel(velocity),
-        encode_action(action),
-        encode_reward(reward)
-    );
 }
 
 float[POLICY_PARAM_COUNT] policy_parameters() {
@@ -144,30 +134,69 @@ float[POLICY_PARAM_COUNT] policy_parameters() {
     }
     return params;
 }
+
 vec4 single_param_sim_step(sampler2D prev_states, vec2 render_pos) {
-    vec4 prev = texture(prev_states, render_pos);
-    if (should_restart>0) prev = initial_state(render_pos);
+    vec4 prev = (should_restart>0)? initial_state(render_pos) : texture(prev_states, render_pos);
     float car_pos = decode_pos(prev.x);
     float car_vel = decode_vel(prev.y);
-    float prev_reward = decode_reward(prev.w);
+    float episode_reward = decode_reward(prev.z);
+    float episodes_reward = decode_reward(prev.w);
+    float reward = 0;
+    bool done = false;
 
     float action = policy(car_pos, car_vel, policy_parameters());
-    return simulation_step(car_pos, car_vel, action, prev_reward);
+    simulation_step(action, car_pos, car_vel, done, reward);  // Note: mutation.
+
+    episode_reward += reward;
+    if (done) {
+        vec4 init = initial_state(render_pos);
+        return vec4(
+            init.x,
+            init.y,
+            init.z,
+            encode_reward(mix(episodes_reward, episode_reward, .5))
+        );
+    }
+    return vec4(
+        encode_pos(car_pos),
+        encode_vel(car_vel),
+        encode_reward(episode_reward),
+        encode_reward(episodes_reward)
+    );
 }
 
 
 vec4 cross_param_simulation(sampler2D prev_states, vec2 render_pos) {
-    vec4 prev = texture(prev_states, render_pos);
-    if (should_restart>0) prev = initial_state_shuffled(render_pos);
+    vec4 prev = (should_restart>0)? initial_state_shuffled(render_pos) : texture(prev_states, render_pos);
     float car_pos = decode_pos(prev.x);
     float car_vel = decode_vel(prev.y);
-    float prev_reward = decode_reward(prev.w);
+    float episode_reward = decode_reward(prev.z);
+    float episodes_reward = decode_reward(prev.w);
+    float reward = 0;
+    bool done = false;
 
-    float adjusted_params[] = policy_parameters();
+    float[] adjusted_params = policy_parameters();
     EnvParameter p_x = env_params[param_index.x];  adjusted_params[param_index.x] = mix(p_x.min, p_x.max, render_pos.x);
     EnvParameter p_y = env_params[param_index.y];  adjusted_params[param_index.y] = mix(p_y.min, p_y.max, render_pos.y);
     float action = policy(car_pos, car_vel, adjusted_params);
-    return simulation_step(car_pos, car_vel, action, prev_reward);
+    simulation_step(action, car_pos, car_vel, done, reward);  // Note: mutation.
+
+    episode_reward += reward;
+    if (done) {
+        vec4 init = initial_state_shuffled(hash22(vec2(car_pos,car_vel)));
+        return vec4(
+            init.x,
+            init.y,
+            init.z,
+            encode_reward(mix(episodes_reward, episode_reward, .5))
+        );
+    }
+    return vec4(
+        encode_pos(car_pos),
+        encode_vel(car_vel),
+        encode_reward(episode_reward),
+        encode_reward(episodes_reward)
+    );
 }
 
 // =========== Rendering ===========
@@ -217,10 +246,12 @@ vec4 render_horizontal_vertical_line2(vec2 pos) {
     return vec4(vec3(.1), .4*mod(should_draw_indicator,2));
 }
 
-vec3 reward_color(float x) {
-    x += 1;
-    x*= .1;
-    return 1-exp2(-vec3(10.*x, x, .1*x));
+vec3 reward_color(float episode_reward, float episodes_reward) {
+    // return vec3(-.11episode_reward, episode_reward*.0001, episode_reward*100000.);
+    episode_reward *= 1.0;
+    episodes_reward *= .1;
+    if (episodes_reward <= 0)  return 1-exp2(-vec3(0, 0, -episode_reward));
+    return 1-exp2(-vec3(.1*episodes_reward, episodes_reward-10., episodes_reward-80.));
 }
 float mountain_height(float x) {
     return (sin(3 * x) + 1) * .33;
@@ -231,7 +262,7 @@ feedback ParamChoiceToState, ParamChoiceToReward, SingleParamSimulation, Initial
     ParamChoiceToState = glsl(cross_param_simulation, sizeof(InitialState)) : initialize(initial_state_shuffled), full_range(true) , hidden;
     vec4 cross_param_reward_render(vec2 pos) {
         vec4 sim = texture(ParamChoiceToState, pos);
-        vec4 col = vec4(reward_color(decode_reward(sim.w)), 1);
+        vec4 col = vec4(reward_color(decode_reward(sim.z), decode_reward(sim.w)), 1);
         return blend(col, render_horizontal_vertical_line2(pos)*vec4(vec3(1), 1));
     }
     ParamChoiceToReward = glsl(cross_param_reward_render, sizeof(ParamChoiceToState)) : initialize(initial_state_shuffled);
@@ -248,7 +279,7 @@ feedback ParamChoiceToState, ParamChoiceToReward, SingleParamSimulation, Initial
 
     vec4 reward_render(vec2 pos) {
         vec4 sim = texture(SingleParamSimulation, pos);
-        vec4 col = vec4(reward_color(decode_reward(sim.w)), 1);
+        vec4 col = vec4(reward_color(decode_reward(sim.z), decode_reward(sim.w)), 1);
         return blend(col, render_horizontal_vertical_line(pos));
     }
     InitialStateToReward = glsl(reward_render, sizeof(SingleParamSimulation)) : initialize(initial_state);
@@ -279,7 +310,8 @@ vec4 policy_render(vec2 pos) {
     );
     action = clamp(action, min_action, max_action);
     action /= max_action - min_action;
-
+    action = pow(abs(action), .25) * sign(action);
+    // action = action * 10000000000.;
     return vec4(action, 0, -action, 1);
 }
 image Policy = glsl(policy_render, sizeof(InitialState));
