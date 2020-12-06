@@ -1,0 +1,313 @@
+#version 330
+
+#include <shapes>
+#include <math_constants>
+#include "shared.shadron"
+
+// Speed of the simulation (steps per second)
+param float FPS = 60.0 : hidden;  // logrange(1.0, 1024.0);
+
+param float theta_render_shift = .5 : range(0, .5);
+
+const float min_position = -1.2;
+const float max_position = 0.6;
+const float max_speed = 0.07;
+const float power = 0.0015;
+const float min_action = -1;
+const float max_action = 1;
+const float goal_velocity = 0;
+const float goal_position = .45;
+
+// State layout:
+// x - theta     // clockwise with 0=upright.
+// y - theta_dot
+// z - torque
+// w - reward
+float encode_pos(float pos) { return unmix(min_position, max_position, pos); }
+float decode_pos(float pos) { return   mix(min_position, max_position, pos); }
+float encode_vel(float vel) { return unmix(-max_speed, max_speed, vel); }
+float decode_vel(float vel) { return   mix(-max_speed, max_speed, vel); }
+float encode_action(float action) { return unmix(min_action, max_action, action); }
+float decode_action(float action) { return   mix(min_action, max_action, action); }
+float encode_reward(float reward) { return unmix(1,2, reward); }
+float decode_reward(float reward) { return   mix(1,2, reward); }
+
+
+// ============== Simulation ==============
+
+#define POLICY_PARAM_COUNT 4
+
+
+param ivec2 param_index = vec2(1, 3): range(0, POLICY_PARAM_COUNT-1);
+var vec2 selected_pos = vec2(.25, .5);
+
+var int should_restart = 0;
+
+struct EnvParameter {
+    float min;
+    float val;
+    float max;
+};
+var EnvParameter env_param_0 = EnvParameter(-10, 0, 100);
+var EnvParameter env_param_1 = EnvParameter(-10, 0, 10);
+var EnvParameter env_param_2 = EnvParameter(-10, 0, 10);
+var EnvParameter env_param_3 = EnvParameter(-10, 0, 10);
+glsl EnvParameter[] env_params = EnvParameter[POLICY_PARAM_COUNT](
+    env_param_0,
+    env_param_1,
+    env_param_2,
+    env_param_3
+);
+
+vec4 initial_state(vec2 pos) {
+    return vec4(
+        pos,
+        encode_action(0),
+        encode_reward(0)
+    );
+}
+image InitialState = glsl(initial_state, 512, 512) : hidden;
+
+vec2 hash22(vec2 p) {
+    p = vec2( dot(p,vec2(127.1,311.7)),
+              dot(p,vec2(269.5,183.3)));
+    return fract(sin(p)*43758.5453123);
+}
+vec4 initial_state_shuffled(vec2 pos) {
+    return initial_state(hash22(pos));
+}
+image InitialStateShuffled = glsl(initial_state_shuffled, sizeof(InitialState)) : hidden;
+
+
+// event mouse_press(left_button) = handle_mouse;
+// event mouse_position(left_button) = handle_mouse;
+// event press(1) { mouse_select_state = 1; }
+// event press(2) { mouse_select_state = 22; }
+float policy(float pos, float vel, float[POLICY_PARAM_COUNT] p) {
+    float action;
+    action = vel*p[0] + p[1]*(pos-goal_position);
+
+    return clamp(action, -1, 1);
+
+    // if (cos(theta) < 0) return theta_dot;  // if we're low on energy, give a push
+    // return -10 * sin(theta)  - 5 * theta_dot; // acceleration towards being still at the top.
+    // return -10.0 * theta - 1 * theta_dot;
+    // return -max_torque;
+    // if (abs(theta) < .1) return -8*theta;
+    // return -80. * theta;
+}
+
+float angle_normalize(float x) {  // Returns angle x but within -pi .. pi
+    x = mod(x, TAU);
+    x = (x < 0)? x+TAU : x; // if (x < 0) {  x += TAU;  }
+    x = (x <= PI)? x : x - TAU;
+    return x;
+}
+
+float square(float x) {
+    return x*x;
+}
+
+
+
+vec4 simulation_step(float position, float velocity, float action, float prev_reward) {
+    float force = min(max(action, min_action), max_action);
+
+    velocity += force * power - 0.0025 * cos(3 * position);
+    if (velocity > max_speed) velocity = max_speed;
+    if (velocity < -max_speed) velocity = -max_speed;
+    position += velocity;
+    if (position > max_position) position = max_position;
+    if (position < min_position) position = min_position;
+    if (position == min_position && velocity < 0) velocity = 0;
+
+    float reward = 0;
+    bool done = position >= goal_position && velocity >= goal_velocity;
+    if (done) {
+        reward = 100.0;
+    }
+    reward -= pow(action, 2) * 0.1;
+
+    reward = mix(prev_reward, reward, .01);
+    return vec4(
+        encode_pos(position),
+        encode_vel(velocity),
+        encode_action(action),
+        encode_reward(reward)
+    );
+}
+
+float[POLICY_PARAM_COUNT] policy_parameters() {
+    float[POLICY_PARAM_COUNT] params;
+    for (int i=0; i<POLICY_PARAM_COUNT; ++i) {
+        params[i] = env_params[i].val;
+    }
+    return params;
+}
+vec4 single_param_sim_step(sampler2D prev_states, vec2 render_pos) {
+    vec4 prev = texture(prev_states, render_pos);
+    if (should_restart>0) prev = initial_state(render_pos);
+    float car_pos = decode_pos(prev.x);
+    float car_vel = decode_vel(prev.y);
+    float prev_reward = decode_reward(prev.w);
+
+    float action = policy(car_pos, car_vel, policy_parameters());
+    return simulation_step(car_pos, car_vel, action, prev_reward);
+}
+
+
+vec4 cross_param_simulation(sampler2D prev_states, vec2 render_pos) {
+    vec4 prev = texture(prev_states, render_pos);
+    if (should_restart>0) prev = initial_state_shuffled(render_pos);
+    float car_pos = decode_pos(prev.x);
+    float car_vel = decode_vel(prev.y);
+    float prev_reward = decode_reward(prev.w);
+
+    float adjusted_params[] = policy_parameters();
+    EnvParameter p_x = env_params[param_index.x];  adjusted_params[param_index.x] = mix(p_x.min, p_x.max, render_pos.x);
+    EnvParameter p_y = env_params[param_index.y];  adjusted_params[param_index.y] = mix(p_y.min, p_y.max, render_pos.y);
+    float action = policy(car_pos, car_vel, adjusted_params);
+    return simulation_step(car_pos, car_vel, action, prev_reward);
+}
+
+// =========== Rendering ===========
+
+
+float inside(float signed_distance) {
+    return smoothstep(0, 0.0001, signed_distance);
+}
+
+vec4 blend(inout vec4 buffer, in vec4 overlay) {
+    buffer = vec4(mix(buffer.rgb, overlay.rgb, overlay.a), min(1, overlay.a+buffer.a));
+    return buffer;
+}
+
+vec4 render_pendulum(vec2 pos, float theta) {
+    vec4 col = vec4(0);
+    vec2 tip = vec2(-sin(theta), cos(theta));
+    col = mix(col, vec4(.7,0,0,1), inside(lineDistance(pos, vec2(0,0), tip, .2)));
+    col = mix(col, vec4(0,0,0,1), inside(circleDistance(pos, vec2(0,0), .04)));
+    return col;
+}
+
+float ring_distance(vec2 pos, float r, float half_width) {
+    return half_width-abs(r-length(pos));
+}
+
+vec4 render_horizontal_vertical_line(vec2 pos) {
+    float should_draw_indicator = (
+        float(pos.x == selected_pos.x) +
+        float(pos.y == selected_pos.y)
+    );
+    return vec4(vec3(.1), .4*mod(should_draw_indicator,2));
+}
+
+vec4 render_horizontal_vertical_line2(vec2 pos) {
+    EnvParameter param_x = env_params[param_index.x];
+    EnvParameter param_y = env_params[param_index.y];
+    vec2 linepos = unmix(
+        vec2(param_x.min, param_y.min),
+        vec2(param_x.max, param_y.max),
+        vec2(param_x.val, param_y.val)
+    );
+    float should_draw_indicator = (
+        float(abs(pos.x - linepos.x) < .01) +
+        float(abs(pos.y - linepos.y) < .01)
+    );
+    return vec4(vec3(.1), .4*mod(should_draw_indicator,2));
+}
+
+vec3 reward_color(float x) {
+    x += 1;
+    x*= .1;
+    return 1-exp2(-vec3(10.*x, x, .1*x));
+}
+float mountain_height(float x) {
+    return (sin(3 * x) + 1) * .33;
+}
+
+
+feedback ParamChoiceToState, ParamChoiceToReward, SingleParamSimulation, InitialStateToState, InitialStateToReward, SelectedState {
+    ParamChoiceToState = glsl(cross_param_simulation, sizeof(InitialState)) : initialize(initial_state_shuffled), full_range(true) , hidden;
+    vec4 cross_param_reward_render(vec2 pos) {
+        vec4 sim = texture(ParamChoiceToState, pos);
+        vec4 col = vec4(reward_color(decode_reward(sim.w)), 1);
+        return blend(col, render_horizontal_vertical_line2(pos)*vec4(vec3(1), 1));
+    }
+    ParamChoiceToReward = glsl(cross_param_reward_render, sizeof(ParamChoiceToState)) : initialize(initial_state_shuffled);
+
+
+    SingleParamSimulation = glsl(single_param_sim_step, sizeof(InitialState)) : initialize(initial_state), full_range(true) , hidden;
+
+    vec4 initial_state_to_state(vec2 pos) {
+        vec4 sim = texture(SingleParamSimulation, pos);
+        sim.a = 1;
+        return blend(sim, render_horizontal_vertical_line(pos));
+    }
+    InitialStateToState = glsl(initial_state_to_state, sizeof(SingleParamSimulation)) : initialize(initial_state);
+
+    vec4 reward_render(vec2 pos) {
+        vec4 sim = texture(SingleParamSimulation, pos);
+        vec4 col = vec4(reward_color(decode_reward(sim.w)), 1);
+        return blend(col, render_horizontal_vertical_line(pos));
+    }
+    InitialStateToReward = glsl(reward_render, sizeof(SingleParamSimulation)) : initialize(initial_state);
+
+    vec4 selected_state(vec2 render_pos) {
+        vec4 sim = texture(SingleParamSimulation, selected_pos);
+        float car_pos = decode_pos(sim.x);
+        float action = decode_action(sim.z);
+
+        float floor_y = mountain_height(decode_pos(render_pos.x));
+
+        vec4 col = vec4(vec3(.1), 1);
+        if (distance(sim.x, render_pos.x) < .05) col.rgb = vec3(.7);
+        if (render_pos.y < floor_y) col.rgb = vec3(.1, .1, .7);
+
+        col = mix(col, vec4(1,.5,0,1), .6*inside(circleDistance(render_pos, vec2(encode_pos(goal_position), mountain_height(goal_position)), .04)));
+
+        return col;
+    }
+    SelectedState = glsl(selected_state, 512, 512) : initialize(initial_state);
+} : update_rate(FPS), filter(nearest);
+
+vec4 policy_render(vec2 pos) {
+    float action = policy(
+        decode_pos(pos.x),
+        decode_vel(pos.y),
+        policy_parameters()
+    );
+    action = clamp(action, min_action, max_action);
+    action /= max_action - min_action;
+
+    return vec4(action, 0, -action, 1);
+}
+image Policy = glsl(policy_render, sizeof(InitialState));
+
+void handle_mouse_single_parameter(vec2 mouse_pos) {
+    selected_pos = mouse_pos;
+}
+event mouse_press(   InitialStateToState,  left_button) = handle_mouse_single_parameter;
+event mouse_position(InitialStateToState,  left_button) = handle_mouse_single_parameter;
+event mouse_press(   InitialStateToReward, left_button) = handle_mouse_single_parameter;
+event mouse_position(InitialStateToReward, left_button) = handle_mouse_single_parameter;
+
+void on_mouse_ParamChoiceToReward(vec2 mouse_pos) {
+    switch(param_index.x) {
+        case 0: env_param_0.val = mix(env_param_0.min, env_param_0.max, mouse_pos.x); break;
+        case 1: env_param_1.val = mix(env_param_1.min, env_param_1.max, mouse_pos.x); break;
+        case 2: env_param_2.val = mix(env_param_2.min, env_param_2.max, mouse_pos.x); break;
+        case 3: env_param_3.val = mix(env_param_3.min, env_param_3.max, mouse_pos.x); break;
+    }
+    switch(param_index.y) {
+        case 0: env_param_0.val = mix(env_param_0.min, env_param_0.max, mouse_pos.y); break;
+        case 1: env_param_1.val = mix(env_param_1.min, env_param_1.max, mouse_pos.y); break;
+        case 2: env_param_2.val = mix(env_param_2.min, env_param_2.max, mouse_pos.y); break;
+        case 3: env_param_3.val = mix(env_param_3.min, env_param_3.max, mouse_pos.y); break;
+    }
+    should_restart = 2;
+}
+event mouse_press(   ParamChoiceToReward, left_button) = on_mouse_ParamChoiceToReward;
+event mouse_position(ParamChoiceToReward, left_button) = on_mouse_ParamChoiceToReward;
+void on_cross_update() {should_restart -= 1;}
+event update() = on_cross_update;
