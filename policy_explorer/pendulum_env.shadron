@@ -44,8 +44,17 @@ struct EnvParameter {
 };
 var EnvParameter env_param_0 = EnvParameter(-PI, PI*.5, PI);
 var EnvParameter env_param_1 = EnvParameter(-2,  1,     2);
-var EnvParameter env_param_2 = EnvParameter(-20, -20.0, 0);
-var EnvParameter env_param_3 = EnvParameter(-5,  -5,    0);
+var EnvParameter env_param_2 = EnvParameter(-20, -20.0, 20);
+var EnvParameter env_param_3 = EnvParameter(-50,  -5,    0);
+float policy(float theta, float theta_dot, float[POLICY_PARAM_COUNT] p) {
+    if (abs(theta) > p[0]) return p[1]*theta_dot;
+    return p[3]*theta_dot + p[2]* theta;
+}
+
+
+    // if (abs(theta) > p[0]) return theta_dot * p[1];  // if we're low on energy, give a push
+    // return p[2] * theta  + p[3] * theta_dot; // acceleration towards being still at the top.
+
 glsl EnvParameter[] env_params = EnvParameter[POLICY_PARAM_COUNT](
     env_param_0,
     env_param_1,
@@ -77,18 +86,7 @@ image InitialStateShuffled = glsl(initial_state_shuffled, sizeof(InitialState)) 
 // event mouse_position(left_button) = handle_mouse;
 // event press(1) { mouse_select_state = 1; }
 // event press(2) { mouse_select_state = 22; }
-float policy(float theta, float theta_dot, float[POLICY_PARAM_COUNT] p) {
 
-    if (abs(theta) > p[0]) return theta_dot * p[1];  // if we're low on energy, give a push
-    return p[2] * theta  + p[3] * theta_dot; // acceleration towards being still at the top.
-
-    // if (cos(theta) < 0) return theta_dot;  // if we're low on energy, give a push
-    // return -10 * sin(theta)  - 5 * theta_dot; // acceleration towards being still at the top.
-    // return -10.0 * theta - 1 * theta_dot;
-    // return -max_torque;
-    // if (abs(theta) < .1) return -8*theta;
-    // return -80. * theta;
-}
 
 float angle_normalize(float x) {  // Returns angle x but within -pi .. pi
     x = mod(x, TAU);
@@ -100,7 +98,6 @@ float angle_normalize(float x) {  // Returns angle x but within -pi .. pi
 float square(float x) {
     return x*x;
 }
-
 
 
 vec4 simulation_step(float theta, float theta_dot, float torque, float prev_cost) {

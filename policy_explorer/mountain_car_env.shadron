@@ -7,8 +7,6 @@
 // Speed of the simulation (steps per second)
 param float FPS = 60.0 : hidden;  // logrange(1.0, 1024.0);
 
-param float theta_render_shift = .5 : range(0, .5);
-
 const float min_position = -1.2;
 const float max_position = 0.6;
 const float max_speed = 0.07;
@@ -48,25 +46,20 @@ struct EnvParameter {
     float val;
     float max;
 };
-var EnvParameter env_param_0 = EnvParameter(-10, 10, 100);
-var EnvParameter env_param_1 = EnvParameter(-1, 55, 1000);
+var EnvParameter env_param_0 = EnvParameter(-5, 5, 50);
+var EnvParameter env_param_1 = EnvParameter(-0, 1.1, .5);
 var EnvParameter env_param_2 = EnvParameter(-1, -.6, 0);
 var EnvParameter env_param_3 = EnvParameter(-0,  .6, 1);
 
 float policy(float pos, float vel, float[POLICY_PARAM_COUNT] p) {
-    // return sign(vel);
-    // return clamp(vel*20, -1, 1);
-    float potential = sin(3 * pos) + 1 + p[1]* vel * vel;
-    if (potential > p[3] && vel>0) return 1;
-    return sign(-vel)*p[2];
-    // return clamp(vel*p[0], p[2], p[3]);
-
-    float action;
-    action = vel*p[0] + p[1]*(pos-goal_position);
-
-    return clamp(action, -1, 1);
+    return p[1] + p[0]*vel;
 }
 
+    // return sign(vel);
+    // return 0;
+    // if (vel>0 && pos > .1) return .1;
+    // if (distance(pos, -.52) < p[1]) return p[0]*sign(vel);
+    // return 0;
 glsl EnvParameter[] env_params = EnvParameter[POLICY_PARAM_COUNT](
     env_param_0,
     env_param_1,
@@ -154,7 +147,7 @@ vec4 single_param_sim_step(sampler2D prev_states, vec2 render_pos) {
             init.x,
             init.y,
             init.z,
-            encode_reward(mix(episodes_reward, episode_reward, .5))
+            encode_reward(reward)//mix(episodes_reward, episode_reward, .5))
         );
     }
     return vec4(
@@ -249,9 +242,9 @@ vec4 render_horizontal_vertical_line2(vec2 pos) {
 vec3 reward_color(float episode_reward, float episodes_reward) {
     // return vec3(-.11episode_reward, episode_reward*.0001, episode_reward*100000.);
     episode_reward *= 1.0;
-    episodes_reward *= .1;
+    // episodes_reward *= .1;
     if (episodes_reward <= 0)  return 1-exp2(-vec3(0, 0, -episode_reward));
-    return 1-exp2(-.2*vec3(episodes_reward, episodes_reward-6., episodes_reward-12.));
+    return 1-exp2(-.9*vec3(episodes_reward, episodes_reward-90., episodes_reward-99.));
 }
 float mountain_height(float x) {
     return (sin(3 * x) + 1) * .33;
