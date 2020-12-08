@@ -32,9 +32,9 @@ float decode_cost(float cost) { return cost-1; }
 #define POLICY_PARAM_COUNT 4
 
 
-param ivec2 param_index = vec2(1, 3): range(0, POLICY_PARAM_COUNT-1);
+param ivec2 param_index = ivec2(1, 3): range(0, POLICY_PARAM_COUNT-1);
+var ivec2 prev_param_index = ivec2(1,3);
 var vec2 selected_pos = vec2(.25, .5);
-
 var int should_restart = 0;
 
 struct EnvParameter {
@@ -43,12 +43,15 @@ struct EnvParameter {
     float max;
 };
 var EnvParameter env_param_0 = EnvParameter(-PI, PI*.5, PI);
-var EnvParameter env_param_1 = EnvParameter(-2,  1,     2);
-var EnvParameter env_param_2 = EnvParameter(-20, -20.0, 20);
+var EnvParameter env_param_1 = EnvParameter(-20,  -15,    20);
+var EnvParameter env_param_2 = EnvParameter(-20, -5.0, 20);
 var EnvParameter env_param_3 = EnvParameter(-50,  -5,    0);
+
 float policy(float theta, float theta_dot, float[POLICY_PARAM_COUNT] p) {
-    if (abs(theta) > p[0]) return p[1]*theta_dot;
-    return p[3]*theta_dot + p[2]* theta;
+    float tip_x = sin(theta);
+    float tip_y = cos(theta);
+    if (tip_y < p[0]) return sign(theta_dot);
+    return p[1]*theta + p[2]*theta_dot;
 }
 
 
@@ -315,5 +318,11 @@ void on_mouse_ParamChoiceToReward(vec2 mouse_pos) {
 }
 event mouse_press(   ParamChoiceToReward, left_button) = on_mouse_ParamChoiceToReward;
 event mouse_position(ParamChoiceToReward, left_button) = on_mouse_ParamChoiceToReward;
-void on_cross_update() {should_restart -= 1;}
+void on_cross_update() {
+    should_restart -= 1;
+    if (prev_param_index != param_index) {
+        prev_param_index = param_index;
+        should_restart = 1;
+    }
+}
 event update() = on_cross_update;

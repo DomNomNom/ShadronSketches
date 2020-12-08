@@ -36,9 +36,9 @@ float decode_reward(float reward) { return   mix(1,2, reward); }
 #define POLICY_PARAM_COUNT 4
 
 
-param ivec2 param_index = vec2(1, 3): range(0, POLICY_PARAM_COUNT-1);
+param ivec2 param_index = ivec2(1, 3): range(0, POLICY_PARAM_COUNT-1);
+var ivec2 prev_param_index = ivec2(1,3);
 var vec2 selected_pos = vec2(.25, .5);
-
 var int should_restart = 0;
 
 struct EnvParameter {
@@ -46,8 +46,8 @@ struct EnvParameter {
     float val;
     float max;
 };
-var EnvParameter env_param_0 = EnvParameter(-5, 5, 50);
-var EnvParameter env_param_1 = EnvParameter(-0, 1.1, .5);
+var EnvParameter env_param_0 = EnvParameter(-5, 7, 50);
+var EnvParameter env_param_1 = EnvParameter(-6, .5, 5);
 var EnvParameter env_param_2 = EnvParameter(-1, -.6, 0);
 var EnvParameter env_param_3 = EnvParameter(-0,  .6, 1);
 
@@ -55,11 +55,6 @@ float policy(float pos, float vel, float[POLICY_PARAM_COUNT] p) {
     return p[1] + p[0]*vel;
 }
 
-    // return sign(vel);
-    // return 0;
-    // if (vel>0 && pos > .1) return .1;
-    // if (distance(pos, -.52) < p[1]) return p[0]*sign(vel);
-    // return 0;
 glsl EnvParameter[] env_params = EnvParameter[POLICY_PARAM_COUNT](
     env_param_0,
     env_param_1,
@@ -334,5 +329,18 @@ void on_mouse_ParamChoiceToReward(vec2 mouse_pos) {
 }
 event mouse_press(   ParamChoiceToReward, left_button) = on_mouse_ParamChoiceToReward;
 event mouse_position(ParamChoiceToReward, left_button) = on_mouse_ParamChoiceToReward;
-void on_cross_update() {should_restart -= 1;}
+void on_cross_update() {
+    should_restart -= 1;
+    if (prev_param_index != param_index) {
+        prev_param_index = param_index;
+        should_restart = 1;
+    }
+}
 event update() = on_cross_update;
+
+// vec4 foo(vec2 pos) {
+//     return vec4(pos.x, pos.y, 0, 1);
+// }
+// image Foo = glsl(foo, 1000, 1000);
+// export png(Foo, "foo.png");
+
