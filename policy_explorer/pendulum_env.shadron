@@ -51,7 +51,7 @@ float policy(float theta, float theta_dot, float[POLICY_PARAM_COUNT] p) {
     float tip_x = sin(theta);
     float tip_y = cos(theta);
     if (tip_y < p[0]) return sign(theta_dot);
-    return p[1]*theta + p[2]*theta_dot;
+    return p[1] * theta;
 }
 
 
@@ -238,6 +238,8 @@ vec4 render_horizontal_vertical_line2(vec2 pos) {
 vec3 heat_color(float x) {
     return 1-exp2(-vec3(10.*x, x, .1*x));
 }
+
+image foo = input();
 
 feedback ParamChoiceToState, ParamChoiceToReward, SingleParamSimulation, InitialStateToState, InitialStateToReward, SelectedState {
     ParamChoiceToState = glsl(cross_param_simulation, sizeof(InitialState)) : initialize(initial_state_shuffled), full_range(true) , hidden;

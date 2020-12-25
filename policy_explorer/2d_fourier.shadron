@@ -1,0 +1,19 @@
+#include <math_constants>
+
+param float p00 : range(-1, 1);
+param float p01 : range(-1, 1);
+param float p10 : range(-1, 1);
+param float p11 : range(-1, 1);
+
+vec4 fourier(vec2 p) {
+    float v = 0;
+    v += p00;
+    v += p01 * cos(p.x * TAU/2);
+    v += p10 * cos(p.y * TAU/2);
+    v += p11 * cos(p.x * TAU/2) * cos(p.y * TAU/2);
+
+    // return vec4(v, 0, -v, 1);
+    return vec4(vec3((v+1)/2), 1);
+}
+
+image Fourier = glsl(fourier, 512, 512);
