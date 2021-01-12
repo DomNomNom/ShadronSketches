@@ -1,0 +1,30 @@
+#include <hsv.shadron>
+
+image Input = file();
+
+parameter vec3 select_color = vec3(1,0,0) : color();
+parameter float target_hue = .6;
+
+parameter float match_min = .3;
+parameter float match_max = .5;
+
+glsl vec4 orange = vec4(1,.5,.0,1);
+
+glsl vec4 change_color(vec2 pos) {
+    // Get input pixel
+    vec4 orig = texture(Input, pos);
+
+    float match = dot(orig.rgb, select_color);
+    match = smoothstep(match_min, match_max, match);
+
+    float h = mix(hue(orig), target_hue, match);
+    float s = saturation(orig);
+    float v = value(orig);
+    // if (match > .8) return orange;
+
+    // vec3 color = mix(orig.rgb, hsv(h,s,v), 1-mask.a);
+    return vec4(hsv(h,s,v), 1);
+}
+
+image Output = glsl(change_color, sizeof(Input));
+//export png_sequence(Output, "frames/????.png", 30, 1);
