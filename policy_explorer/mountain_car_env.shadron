@@ -46,15 +46,13 @@ struct EnvParameter {
     float val;
     float max;
 };
-var EnvParameter env_param_0 = EnvParameter(-5, 0, 1);
-var EnvParameter env_param_1 = EnvParameter(-6, .5, 15);
-var EnvParameter env_param_2 = EnvParameter(-1, -.6, 5);
+var EnvParameter env_param_0 = EnvParameter(-5, 7, 50);
+var EnvParameter env_param_1 = EnvParameter(-6, .5, 5);
+var EnvParameter env_param_2 = EnvParameter(-1, -.6, 0);
 var EnvParameter env_param_3 = EnvParameter(-0,  .6, 1);
 
 float policy(float pos, float vel, float[POLICY_PARAM_COUNT] p) {
-    if (distance(pos, p[0]) < p[2]) return sign(vel);
-    return 0;
-    // return p[0]*vel + p[1] + p[2]*pos?;
+    return p[1] + p[0]*vel;
 }
 
 glsl EnvParameter[] env_params = EnvParameter[POLICY_PARAM_COUNT](
