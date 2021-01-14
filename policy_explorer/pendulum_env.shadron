@@ -42,16 +42,16 @@ struct EnvParameter {
     float val;
     float max;
 };
-var EnvParameter env_param_0 = EnvParameter(-PI, PI*.5, PI);
-var EnvParameter env_param_1 = EnvParameter(-20,  -15,    20);
+var EnvParameter env_param_0 = EnvParameter(-PI, 0, PI);
+var EnvParameter env_param_1 = EnvParameter(-50,  -15,    20);
 var EnvParameter env_param_2 = EnvParameter(-20, -5.0, 20);
-var EnvParameter env_param_3 = EnvParameter(-50,  -0,    50);
+var EnvParameter env_param_3 = EnvParameter(0,  1,    10);
 
 float policy(float theta, float theta_dot, float[POLICY_PARAM_COUNT] p) {
     float tip_x = sin(theta);
     float tip_y = cos(theta);
-    if (tip_y < p[0]) return sign(theta_dot);
-    return p[1]*theta + p[2]*theta_dot + p[3]*theta_dot*theta_dot*theta_dot;
+    if (tip_y < p[0]) return 2*sign(theta_dot);
+    return (p[1]*theta + p[2]*theta_dot) * p[3];
 }
 
 
@@ -107,7 +107,7 @@ vec4 simulation_step(float theta, float theta_dot, float torque, float prev_cost
     float l = 1;
 
     torque = clamp(torque, -max_torque, max_torque);
-    float cost = square(angle_normalize(theta)) + .1 * square(theta_dot) + .001 * square(torque);
+    float cost = square(angle_normalize(theta)) + .1 * square(theta_dot) + 1.1 * square(torque);
 
     float newthdot = theta_dot + (-3 * g / (2 * l) * sin(theta + PI) + 3. / (m * square(l)) * torque) * dt;
     float newth = theta + newthdot * dt;
@@ -134,7 +134,7 @@ float[POLICY_PARAM_COUNT] policy_parameters() {
 }
 vec4 single_param_sim_step(sampler2D prev_states, vec2 pos) {
     vec4 prev = texture(prev_states, pos);
-    if (should_restart>0) prev = initial_state(pos);
+    if (should_restart > 0) prev = initial_state(pos);
     float theta = decode_theta(prev.x);
     float theta_dot = decode_theta_dot(prev.y);
     float prev_cost = decode_cost(prev.w);
@@ -236,7 +236,21 @@ vec3 heat_color(float x) {
     return 1-exp2(-vec3(10.*x, x, .1*x));
 }
 
-feedback ParamChoiceToState, ParamChoiceToReward, SingleParamSimulation, InitialStateToState, InitialStateToReward, SelectedState {
+vec4 policy_render(vec2 pos) {
+    pos.x += theta_render_shift;
+    float torque = policy(
+        decode_theta(pos.x),
+        decode_theta_dot(pos.y),
+        policy_parameters()
+    );
+    torque = clamp(torque, -max_torque, max_torque);
+    torque /= max_torque;
+
+    return vec4(torque, 0, -torque, 1);
+}
+image Policy = glsl(policy_render, sizeof(InitialState));
+
+feedback ParamChoiceToState, ParamChoiceToReward, SingleParamSimulation, InitialStateToState, InitialStateToReward, SelectedState, StateDensity {
     ParamChoiceToState = glsl(cross_param_simulation, sizeof(InitialState)) : initialize(initial_state_shuffled), full_range(true) , hidden;
     vec4 cross_param_reward_render(vec2 pos) {
         vec4 sim = texture(ParamChoiceToState, pos);
@@ -275,20 +289,39 @@ feedback ParamChoiceToState, ParamChoiceToReward, SingleParamSimulation, Initial
         return col;
     }
     SelectedState = glsl(selected_state, 512, 512) : initialize(initial_state);
+
+    vec4 state_density(vec2 pos) {
+        vec4 col = vec4(vec3(0), 1);
+
+        int n_samples = 200;
+        float n_found = 0;
+        for (int i=0; i<n_samples; ++i) {
+            vec2 sample_pos = hash22(pos + vec2(i, shadron_Time));
+            vec4 sim = texture(SingleParamSimulation, sample_pos);
+            sim.x -= theta_render_shift;
+            // sim = clamp(sim, 0, 1);
+            if (distance(pos, sim.xy) < .01) {
+                vec4 next_sim = single_param_sim_step(SingleParamSimulation, sample_pos);
+                next_sim.x -= theta_render_shift;
+
+                col.rgb += next_sim.rgb;
+                n_found += 1;
+                // col.rg = next_sim.rg;
+                // col.b += 1;
+            }
+        }
+        // col.rgb = 1-exp2(-col.rgb);
+        col.rgb /= n_found;
+        col.rgb *= 1-exp2(-n_found);
+
+        if (n_found == 0) {
+            col.rgb = .2 * policy_render(pos).rgb;
+        }
+        return col;
+    }
+    StateDensity = glsl(state_density, 512, 512) : initialize(initial_state);
 } : update_rate(FPS), filter(nearest);
 
-vec4 policy_render(vec2 pos) {
-    float torque = policy(
-        decode_theta(pos.x),
-        decode_theta_dot(pos.y),
-        policy_parameters()
-    );
-    torque = clamp(torque, -max_torque, max_torque);
-    torque /= max_torque;
-
-    return vec4(torque, 0, -torque, 1);
-}
-image Policy = glsl(policy_render, sizeof(InitialState));
 
 export png_sequence(InitialStateToState, "frames/????.png", 30, 3.5);
 
