@@ -1,0 +1,59 @@
+#version 450
+
+#include <hsv.shadron>
+#include <math_constants>
+
+param vec2 tweak = vec2(1) : range(-1, 10);
+
+image Img = file("inputs/curvyboii.png") : map(clamp);
+
+// glsl vec4 into_linear_color_space(vec2 pos) {
+//     vec4 c = texture(Img, pos);
+//     return c * c;  // https://www.youtube.com/watch?v=LKnqECcg6Gw
+// }
+// image LinearImg = glsl(into_linear_color_space, sizeof Img);
+
+
+// perceptual luminance-preserving conversion to greyscale
+glsl float greyscale(vec4 a) {
+    return dot(a.rgb, vec3(0.2126, 0.7152, 0.0722));
+}
+
+
+glsl vec4 pointiness(vec2 pos) {
+    float v = greyscale(texture(Img, pos));
+    vec2 dv = vec2(dFdx(v), dFdy(v));
+    vec4 c = vec4(0);
+
+    // Convole this kernel. https://en.wikipedia.org/wiki/Kernel_(image_processing)
+    float n = 1/8.;  // neighbor pixel weight
+    mat3 kernel = mat3(
+        n, n, n,
+        n,-1, n,
+        n, n, n
+    );
+    float convolved = 0;
+    int convSize = 3;
+    for(int i = 0; i < convSize; ++i) {
+        for(int j = 0; j < convSize; ++j) {
+            vec2 offset = shadron_PixelSize * vec2(
+                (j - (convSize / 2)),
+                (i - (convSize / 2))
+            );
+            convolved += kernel[i][j] * greyscale(texture(Img, pos + offset));
+        }
+    }
+
+    dv *= convolved;
+    c.rgb = hsv(
+        atan(dv.y, dv.x) / (TAU/1) + 1,
+        1,
+        length(dv) * tweak.x
+    );
+    // c.rgb = vec3(convolved);
+    c.a = 1;
+    // c = sqrt(c);
+    return c;
+}
+
+image Pointiness = glsl(pointiness, sizeof Img);
