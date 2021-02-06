@@ -3,61 +3,49 @@
 #include <hsv.shadron>
 #include <math_constants>
 
-param vec2 tweak = vec2(100, 1) : range(-1, 10);
+param vec2 tweak = vec2(2000, 1) : range(-1, 10);
 
 image Img = file("inputs/curvyboii.png") : map(clamp);
 
-// glsl vec4 into_linear_color_space(vec2 pos) {
-//     vec4 c = texture(Img, pos);
-//     return c * c;  // https://www.youtube.com/watch?v=LKnqECcg6Gw
-// }
-// image LinearImg = glsl(into_linear_color_space, sizeof Img);
-
-
 // perceptual luminance-preserving conversion to greyscale
-glsl float greyscale(vec4 a) {
+ float greyscale(vec4 a) {
     return dot(a.rgb, vec3(0.2126, 0.7152, 0.0722));
 }
 
-glsl vec2 derivative(float f) {
+ vec2 derivative(float f) {
     return vec2(dFdx(f), dFdy(f));
 }
 
-glsl float cross2(vec2 a, vec2 b) { // 2D cross product.
+ float cross2(vec2 a, vec2 b) { // 2D cross product.
     return cross(vec3(a, 0), vec3(b, 0)).z;
 }
 
-glsl vec4 pointiness(vec2 pos) {
+vec4 pointiness(vec2 pos) {
     // return vec4(pos, 0, 1);
 
-    float v = greyscale(texture(Img, pos));
-    vec2 dv = derivative(v);
-    vec4 c = vec4(0);
+
 
     vec2 p = vec2(0); {
-        // Check how nearby derivatives compare to each other.
-        vec2 d = derivative(greyscale(texture(Img, pos + tweak.y * shadron_PixelSize * vec2( 0, -1))));
-        vec2 u = derivative(greyscale(texture(Img, pos + tweak.y * shadron_PixelSize * vec2( 0,  1))));
-        vec2 l = derivative(greyscale(texture(Img, pos + tweak.y * shadron_PixelSize * vec2(-1,  0))));
-        vec2 r = derivative(greyscale(texture(Img, pos + tweak.y * shadron_PixelSize * vec2( 1,  0))));
-        p += vec2(-1, 1) * cross2(r, d);
-        p += vec2( 1, 1) * cross2(d, l);
-        p += vec2( 1,-1) * cross2(l, u);
-        p += vec2(-1,-1) * cross2(u, r);
+        const float n = 64;
+        for (float i=0; i<n; i+=1) {
+            float t = i * TAU / n;
+            mat2 R = mat2(cos(t), -sin(t), sin(t), cos(t));
+            mat2 R2 = mat2(cos(t), sin(t), -sin(t), cos(t));
+            vec2 d = derivative(greyscale(texture(Img, pos + tweak.y * shadron_PixelSize * R * vec2( 0, -1))));
+            vec2 r = derivative(greyscale(texture(Img, pos + tweak.y * shadron_PixelSize * R * vec2( 1,  0))));
+            p += R * vec2(-1, 1) * cross2(r, d);
+        }
+        p /= n;
     }
-    dv = p;
+    vec2 pointiness = p;
 
+    vec4 c = vec4(0);
     c.rgb = hsv(
-        atan(dv.y, dv.x) / (TAU/1),
+        atan(pointiness.y, pointiness.x) / (TAU/1),
         1,
-        length(dv) * tweak.x
+        length(pointiness) * tweak.x
     );
-
-
-
-    // c.rgb = vec3(convolved);
     c.a = 1;
-    // c = sqrt(c);
     return c;
 }
 
