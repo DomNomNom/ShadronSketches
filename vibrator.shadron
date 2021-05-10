@@ -30,7 +30,7 @@ glsl vec4 blend(vec4 x, vec4 y) {
 
 glsl float hashCombine(float x, float y) {
     x += 4.5;
-    return 0.3517 * x*x + y;
+    return 0.3517 * x * x + y;
 }
 
 glsl vec4 fierstein(vec2 pos, float time) {
