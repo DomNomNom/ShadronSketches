@@ -21,6 +21,8 @@ complex complex_multiply(complex z, complex w) {
         z.x*w.y + z.y*w.x
     );
 }
+complex cmul(complex z, complex w) { return complex_multiply(z,w); }
+
 
 complex complex_phase(float angle) {
     return complex(
@@ -33,12 +35,21 @@ complex complex_rotate(complex z, float angle) {
     return complex_multiply(z, complex_phase(angle));
 }
 
+
 // computes a^z where only z is complex
 complex real_pow_complex(float a, complex z) {
     return pow(a, z.x) * complex(
         cos(z.y * log(a)),
         sin(z.y * log(a))
     );
+}
+
+// shorthand for e^(i*z)
+complex ei(complex z) {
+    return real_pow_complex(EULER, complex(-z.y, z.x));
+}
+complex ei(float z) {
+    return complex(cos(z), sin(z));
 }
 
 // http://mathworld.wolfram.com/ComplexArgument.html

@@ -1,0 +1,20 @@
+#include <hsv.shadron>
+#include "library/complexNumbers.shadron"
+
+parameter complex A = complex(.5*ROOT2, .5*ROOT2);
+parameter complex B = complex(-.25*ROOT2, .25*ROOT2);
+
+glsl vec4 orange = vec4(1,.5,.0,1);
+
+glsl vec4 intentional_nice_bug(vec2 pos, float time) {
+    pos -= .5;
+    pos *= 2;
+    // complex p = ei(PI) * (A*ei(time) + B * ei(-time));
+    complex p = cmul(A, ei(time)) + cmul(B, ei(-time));
+    if (length(pos - p) <= .1) return orange;
+    // if (abs(pos.y - .5) < .01) return orange;
+    return vec4(vec3(0), 1);
+}
+
+animation Output = glsl(intentional_nice_bug, 512, 512);
+//export png_sequence(Output, "frames/????.png", 30, 1);
