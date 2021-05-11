@@ -1,6 +1,8 @@
 #include <hsv.shadron>
+#include <debug.shadron>
 #include "library/complexNumbers.shadron"
 
+parameter float R1 = .2;
 parameter vec2 A = vec2(.75*ROOT2/2, .75*ROOT2/2);
 parameter vec2 B = vec2(-.25*ROOT2/2, .25*ROOT2/2);
 parameter vec2 C = vec2(.75, 0);
@@ -36,11 +38,9 @@ Planet planet_orthoginalize(Planet p) {
     );
 }
 Planet planet_unphase(Planet p) {
-    float arg_a = complex_arg(p.a);
-    float arg_b = complex_arg(p.b);
     return Planet(
-        complex_rotate(p.a, -arg_a),
-        complex_rotate(p.b, -arg_b),
+        complex_rotate(p.a, -complex_arg(p.a)),
+        complex_rotate(p.b, -complex_arg(p.b)),
         p.r
     );
 }
@@ -51,22 +51,66 @@ Planet planet_standardize(Planet p) {
         p.r
     );
 }
+vec2 planet_major_minor_lengths(Planet p) {
+    float a = length(p.a);  // The unrotated and unphased versions of `a`
+    float b = length(p.b);  // and `b` are purely real and preserve length.
+    return vec2(a+b, a-b);  // What we evaluate to at t=0 and t=TAU/4
+}
 
+vec3 exposure(vec3 col) {
+    return vec3(1) - pow(vec3(2), -1.8 * col);
+}
+
+float is_overlap_time(Planet p, float time) {
+    float a = length(p.a);  // The unrotated and unphased versions of `a`
+    float b = length(p.b);  // and `b` are purely real and preserve length.
+    if (a*b <= 1e-15) return float(max(a,b) < p.r);
+    float determinant = (p.r*p.r - a*a -b*b) / (2*a*b);
+    if (determinant < -1) return 0;
+    if (determinant > 1) return 1;
+    float critical_angle = .5 * acos(determinant);
+    // if (min(a,b) <= 1e-15) return float(p.r > max(a,b));
+    time = mod(time,PI);
+    if (time > TAU / 4) time = PI - time;
+    if (time - critical_angle > 0) return 1;
+    return 0;
+}
+
+float overlap_fraction(Planet p1, Planet p2) {
+    float a = length(p1.a - p2.a);  // The unrotated and unphased versions of `a`
+    float b = length(p1.b - p2.b);  // and `b` are purely real and preserve length.
+    float r = p1.r + p2.r;
+    if (min(a,b) <= 1e-15) return float(max(a,b) < r);
+    float determinant = (r*r - a*a -b*b) / (2*a*b);
+    if (determinant <= -1) return 0;
+    if (determinant >= 1) return 1;
+    float critical_angle = .5 * acos(determinant);
+    return 1 - (critical_angle / (TAU/4));
+}
+
+// float printValue(float value, ivec2 position) {
 vec3 intentional_nice_bug(vec2 pos, float time) {
     // transform into a -1,-1  to 1,1 coordinate system
     pos -= .5;
     pos *= 2;
 
-    Planet p1 = planet_unphase(planet_orthoginalize(Planet(A, B, .1)));
+    Planet p1 = planet_standardize(Planet(A, B, R1));
     Planet p2 = Planet(C, D, .1);
-    p2 = planet_standardize(Planet(A, B, .1));
     Planet zero = Planet(vec2(0), vec2(0), .005);
     Planet diff = planet_orthoginalize(Planet(p1.a - p2.a, p1.b - p2.b, p1.r + p2.r));
-    return (
+
+    float a = length(p1.a);  // The unrotated and unphased versions of `a`
+    float b = length(p1.b);  // and `b` are purely real and preserve length.
+    float to_debug = overlap_fraction(p1, zero);
+
+    return exposure(
         planet_stencil(p1, pos, time) * orange +
-        planet_stencil(p2, pos, time) * lime +
+        // planet_stencil(p2, pos, time) * lime +
         planet_stencil(zero, pos, time) * white +
         // planet_stencil(diff, pos, time) * red +
+        is_overlap_time(p1, time) * red +
+        // float(printValue(critical_angle(p1), ivec2(pos*100))) * red +
+        float(printValue(to_debug, ivec2(pos*100))) * lime +
         0
     );
 }
