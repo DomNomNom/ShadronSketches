@@ -1,20 +1,47 @@
 #include <hsv.shadron>
 #include "library/complexNumbers.shadron"
 
-parameter complex A = complex(.5*ROOT2, .5*ROOT2);
-parameter complex B = complex(-.25*ROOT2, .25*ROOT2);
+parameter vec2 A = vec2(.75*ROOT2/2, .75*ROOT2/2);
+parameter vec2 B = vec2(-.25*ROOT2/2, .25*ROOT2/2);
+parameter vec2 C = vec2(.75, 0);
+parameter vec2 D = vec2(.25, 0);
 
-glsl vec4 orange = vec4(1,.5,.0,1);
+glsl vec3 orange = vec3(1,.5,.0);
+glsl vec3 lime = vec3(.5,1,.0);
+glsl vec3 white = vec3(1,1,1);
+glsl vec3 red = vec3(1,.1,.0);
 
-glsl vec4 intentional_nice_bug(vec2 pos, float time) {
+struct Planet {
+    vec2 a;
+    vec2 b;
+    float r;
+};
+vec2 planet_pos(Planet p, float time) {
+    return cmul(p.a, ei(time)) + cmul(p.b, ei(-time));
+}
+float planet_stencil(Planet p, vec2 pos, float time) {
+    vec2 ppos = planet_pos(p, time);
+    const float boundary_size = .002;
+    return smoothstep(boundary_size, -boundary_size, length(pos - ppos) - p.r);
+}
+
+glsl vec3 intentional_nice_bug(vec2 pos, float time) {
+    // transform into a -1,-1  to 1,1 coordinate system
     pos -= .5;
     pos *= 2;
-    // complex p = ei(PI) * (A*ei(time) + B * ei(-time));
-    complex p = cmul(A, ei(time)) + cmul(B, ei(-time));
-    if (length(pos - p) <= .1) return orange;
-    // if (abs(pos.y - .5) < .01) return orange;
-    return vec4(vec3(0), 1);
+
+    Planet p1 = Planet(A, B, .1);
+    Planet p2 = Planet(C, D, .1);
+    Planet zero = Planet(vec2(0), vec2(0), .005);
+    Planet diff = Planet(p1.a - p2.a, p1.b - p2.b, p1.r + p2.r);
+    return (
+        planet_stencil(p1, pos, time) * orange +
+        planet_stencil(p2, pos, time) * lime +
+        planet_stencil(zero, pos, time) * white +
+        planet_stencil(diff, pos, time) * red
+    );
 }
+
 
 animation Output = glsl(intentional_nice_bug, 512, 512);
 //export png_sequence(Output, "frames/????.png", 30, 1);
