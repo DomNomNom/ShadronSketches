@@ -25,20 +25,49 @@ float planet_stencil(Planet p, vec2 pos, float time) {
     return smoothstep(boundary_size, -boundary_size, length(pos - ppos) - p.r);
 }
 
-glsl vec3 intentional_nice_bug(vec2 pos, float time) {
+Planet planet_orthoginalize(Planet p) {
+    float arg_a = complex_arg(p.a);
+    float arg_b = complex_arg(p.b);
+    float average = (arg_a + arg_b)/2;
+    return Planet(
+        complex_rotate(p.a, -average),
+        complex_rotate(p.b, -average),
+        p.r
+    );
+}
+Planet planet_unphase(Planet p) {
+    float arg_a = complex_arg(p.a);
+    float arg_b = complex_arg(p.b);
+    return Planet(
+        complex_rotate(p.a, -arg_a),
+        complex_rotate(p.b, -arg_b),
+        p.r
+    );
+}
+Planet planet_standardize(Planet p) {
+    return Planet(
+        vec2(length(p.a), 0),
+        vec2(length(p.b), 0),
+        p.r
+    );
+}
+
+vec3 intentional_nice_bug(vec2 pos, float time) {
     // transform into a -1,-1  to 1,1 coordinate system
     pos -= .5;
     pos *= 2;
 
-    Planet p1 = Planet(A, B, .1);
+    Planet p1 = planet_unphase(planet_orthoginalize(Planet(A, B, .1)));
     Planet p2 = Planet(C, D, .1);
+    p2 = planet_standardize(Planet(A, B, .1));
     Planet zero = Planet(vec2(0), vec2(0), .005);
-    Planet diff = Planet(p1.a - p2.a, p1.b - p2.b, p1.r + p2.r);
+    Planet diff = planet_orthoginalize(Planet(p1.a - p2.a, p1.b - p2.b, p1.r + p2.r));
     return (
         planet_stencil(p1, pos, time) * orange +
         planet_stencil(p2, pos, time) * lime +
         planet_stencil(zero, pos, time) * white +
-        planet_stencil(diff, pos, time) * red
+        // planet_stencil(diff, pos, time) * red +
+        0
     );
 }
 
