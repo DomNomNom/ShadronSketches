@@ -5,14 +5,14 @@ vec4 initial_2(ivec2 pos) {    return vec4(0, 1, 0, 1); }
 vec4 initial_3(ivec2 pos) {    return vec4(0, 0, 1, 1); }
 
 feedback Buffer1, Buffer2, Buffer3 {
-    vec4 buffer1(ivec2 pos) { return texelFetch(Buffer1, pos, 0);texelFetch(Buffer2, pos, 0);texelFetch(Buffer3, pos, 0);    }
-    vec4 buffer2(ivec2 pos) { return texelFetch(Buffer1, pos, 0);texelFetch(Buffer2, pos, 0);texelFetch(Buffer3, pos, 0);    }
-    vec4 buffer3(ivec2 pos) { return texelFetch(Buffer1, pos, 0);texelFetch(Buffer2, pos, 0);texelFetch(Buffer3, pos, 0);    }
+    vec4 buffer1(ivec2 pos) { return mix(texelFetch(Buffer1, pos, 0), texelFetch(Buffer1, pos, 0) + texelFetch(Buffer2, pos, 0) + texelFetch(Buffer3, pos, 0), .01); }
+    vec4 buffer2(ivec2 pos) { return mix(texelFetch(Buffer2, pos, 0), texelFetch(Buffer1, pos, 0) + texelFetch(Buffer2, pos, 0) + texelFetch(Buffer3, pos, 0), .01); }
+    vec4 buffer3(ivec2 pos) { return mix(texelFetch(Buffer3, pos, 0), texelFetch(Buffer1, pos, 0) + texelFetch(Buffer2, pos, 0) + texelFetch(Buffer3, pos, 0), .01); }
 
-    PlanetBuffer1 = glsl(planet_buffer1, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
-    PlanetBuffer2 = glsl(planet_buffer2, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
-    PlanetBuffer3 = glsl(planet_buffer3, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
-} : update_rate(FPS), filter(nearest);
+    Buffer1 = glsl(buffer1, 100, 100) : initialize(initial_1), full_range(true);
+    Buffer2 = glsl(buffer2, 100, 100) : initialize(initial_2), full_range(true);
+    Buffer3 = glsl(buffer3, 100, 100) : initialize(initial_3), full_range(true);
+} : update_rate(60.), filter(nearest);
 
 
 // animation Output = glsl(universe_render, 512, 512);
