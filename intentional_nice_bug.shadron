@@ -70,7 +70,7 @@ float is_overlap_time(Planet p1, Planet p2, float time) {
     if (determinant < -1) return 0;
     if (determinant > 1) return 1;
     float critical_angle = .5 * acos(determinant);
-    time += (complex_arg(p.a) - complex_arg(p.b))/2;
+    time += (complex_arg(p.a) - complex_arg(p.b))/2;  // start caring about relative phases again.
     time = mod(time,PI);
     if (time > TAU / 4) time = PI - time;
     if (time - critical_angle > 0) return 1;
