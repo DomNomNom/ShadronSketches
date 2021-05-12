@@ -92,13 +92,28 @@ float overlap_fraction(Planet p1, Planet p2) {
     float critical_angle = .5 * acos(determinant);
     return 1 - (critical_angle / (TAU/4));
 }
+float[PLANET_COUNT] get_total_overlaps(Planet[PLANET_COUNT] planets) {
+    float[PLANET_COUNT] total_overlaps;
+    for (int i=0; i<PLANET_COUNT; ++i) {
+        total_overlaps[i] = 0;
+    }
+    for (int i=0; i<PLANET_COUNT; ++i) {
+        for (int j=i+1; j<PLANET_COUNT; ++j) {
+            float overlap = overlap_fraction(planets[i], planets[j]);
+            total_overlaps[i] += overlap;
+            total_overlaps[j] += overlap;
+        }
+    }
+    return total_overlaps;
+}
+
 
 
 vec4 initial_AB(vec2 pos) {
-    return hash42(pos) * 2 - 1;
+    return hash24(pos) * 2 - 1;
 }
 float initial_R(vec2 pos) {
-    return hash12(pos) * .5;
+    return hash21(pos) * .5;
 }
 vec4 initial_evolution_vars(ivec2 pos) {
     // Structure of the `evolution_vars` pixel
@@ -109,12 +124,37 @@ vec4 initial_evolution_vars(ivec2 pos) {
     return vec4(0, 1, 0, 1);
 }
 
+float cost_function(in Planet[PLANET_COUNT] planets) {
+    float[PLANET_COUNT] total_overlaps = get_total_overlaps(planets);
+    float total_overlap = 0;
+    float total_radius = 0;
+    float excess_apogee = 0;
+    for (int i=0; i<PLANET_COUNT; ++i) total_overlap += total_overlaps[i];
+    for (int i=0; i<PLANET_COUNT; ++i) total_radius += planets[i].r;
+    for (int i=0; i<PLANET_COUNT; ++i) {
+        float apogee = length(planets[i].a) + length(planets[i].b);
+        excess_apogee = max(0, apogee-1);
+    }
+    return 1000*total_overlap + 10*excess_apogee - total_radius;
+}
+
 feedback Planet_ABs, Planet_Rs, EvolutionVars, UniverseRender {
     Planet[PLANET_COUNT] get_planets(int universe) {
         Planet[PLANET_COUNT] planets;
         for (int i=0; i<PLANET_COUNT; ++i) {
             vec4 ab = texelFetch(Planet_ABs, ivec2(universe, i), 0);
             float r = texelFetch(Planet_Rs, ivec2(universe, i), 0).r;
+            planets[i] = Planet(ab.xy, ab.zw, r);
+        }
+        return planets;
+    }
+    Planet[PLANET_COUNT] get_new_planets(int universe, vec2 pos) {
+        float time = texelFetch(EvolutionVars, ivec2(0), 0).r;
+
+        Planet[PLANET_COUNT] planets;
+        for (int i=0; i<PLANET_COUNT; ++i) {
+            vec4 ab = murmurHash44(vec4(pos, universe, i*2));
+            float r = murmurHash41(vec4(pos, universe, i*2+1));
             planets[i] = Planet(ab.xy, ab.zw, r);
         }
         return planets;
@@ -139,6 +179,7 @@ feedback Planet_ABs, Planet_Rs, EvolutionVars, UniverseRender {
     }
     EvolutionVars = glsl(evolution_vars, 2, 2) : initialize(initial_evolution_vars), full_range(true);
 
+
     vec3 universe_render(vec2 pos) {
         // transform into a -1,-1  to 1,1 coordinate system
         pos -= .5;
@@ -146,28 +187,18 @@ feedback Planet_ABs, Planet_Rs, EvolutionVars, UniverseRender {
         float time = texelFetch(EvolutionVars, ivec2(0), 0).r;
 
         Planet[PLANET_COUNT] planets = get_planets(universe_select);
-        float[PLANET_COUNT] totalOverlaps;
-        for (int i=0; i<PLANET_COUNT; ++i) {
-            totalOverlaps[i] = 0;
-        }
-        for (int i=0; i<PLANET_COUNT; ++i) {
-            for (int j=i+1; j<PLANET_COUNT; ++j) {
-                float overlap = overlap_fraction(planets[i], planets[j]);
-                totalOverlaps[i] += overlap;
-                totalOverlaps[j] += overlap;
-            }
-        }
+        float[PLANET_COUNT] total_overlaps = get_total_overlaps(planets);
 
         Planet zero = Planet(vec2(0), vec2(0), .005);
         vec3 col = planet_stencil(zero, pos, time) * white;
         for (int i=0; i<PLANET_COUNT; ++i) {
-            float overlap = totalOverlaps[i];
+            float overlap = total_overlaps[i];
             col += planet_stencil(planets[i], pos, time) * vec3(overlap, .5, overlap <= 0? 1:0);
         }
-            // planet_stencil(diff, pos, time) * red +
-            // is_overlap_time(p1, p2, time) * red +
-            // float(printValue(critical_angle(p1), ivec2(pos*100))) * red +
-            // float(printValue(to_debug, ivec2(pos*100))) * lime +
+
+        // planet_stencil(diff, pos, time) * red +
+        // is_overlap_time(p1, p2, time) * red +
+        col += float(printValue(cost_function(planets), ivec2(pos*100))) * lime;
         return exposure(col);
     }
     UniverseRender = glsl(universe_render, 512, 512);

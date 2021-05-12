@@ -1,11 +1,12 @@
 // Hash Functions
 //
-// murmurHashNM() takes M unsigned integers and returns N hash values.
+// murmurHashNM() takes N unsigned integers and returns M hash values.
 // The returned values are unsigned integers between 0 and 2^32 - 1.
 //
-// hashNM() takes M floating point numbers and returns N hash values.
+// hashNM() takes N floating point numbers and returns M hash values.
 // The returned values are floating point numbers between 0.0 and 1.0.
 //
+// Based off this, but with a more sensible NM ordering.
 // https://gist.github.com/mpottinger/54d99732d4831d8137d178b4a6007d1a
 //
 //------------------------------------------------------------------------------
@@ -27,7 +28,7 @@ float hash11(float src) {
 
 //------------------------------------------------------------------------------
 
-uint murmurHash12(uvec2 src) {
+uint murmurHash21(uvec2 src) {
     const uint M = 0x5bd1e995u;
     uint h = 1190494759u;
     src *= M; src ^= src>>24u; src *= M;
@@ -37,14 +38,14 @@ uint murmurHash12(uvec2 src) {
 }
 
 // 1 output, 2 inputs
-float hash12(vec2 src) {
-    uint h = murmurHash12(floatBitsToUint(src));
+float hash21(vec2 src) {
+    uint h = murmurHash21(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
 //------------------------------------------------------------------------------
 
-uint murmurHash13(uvec3 src) {
+uint murmurHash31(uvec3 src) {
     const uint M = 0x5bd1e995u;
     uint h = 1190494759u;
     src *= M; src ^= src>>24u; src *= M;
@@ -54,14 +55,14 @@ uint murmurHash13(uvec3 src) {
 }
 
 // 1 output, 3 inputs
-float hash13(vec3 src) {
-    uint h = murmurHash13(floatBitsToUint(src));
+float hash31(vec3 src) {
+    uint h = murmurHash31(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
 //------------------------------------------------------------------------------
 
-uint murmurHash14(uvec4 src) {
+uint murmurHash41(uvec4 src) {
     const uint M = 0x5bd1e995u;
     uint h = 1190494759u;
     src *= M; src ^= src>>24u; src *= M;
@@ -71,14 +72,14 @@ uint murmurHash14(uvec4 src) {
 }
 
 // 1 output, 4 inputs
-float hash14(vec4 src) {
-    uint h = murmurHash14(floatBitsToUint(src));
+float hash41(vec4 src) {
+    uint h = murmurHash41(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
 //------------------------------------------------------------------------------
 
-uvec2 murmurHash21(uint src) {
+uvec2 murmurHash12(uint src) {
     const uint M = 0x5bd1e995u;
     uvec2 h = uvec2(1190494759u, 2147483647u);
     src *= M; src ^= src>>24u; src *= M;
@@ -88,8 +89,8 @@ uvec2 murmurHash21(uint src) {
 }
 
 // 2 outputs, 1 input
-vec2 hash21(float src) {
-    uvec2 h = murmurHash21(floatBitsToUint(src));
+vec2 hash12(float src) {
+    uvec2 h = murmurHash12(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
@@ -112,7 +113,7 @@ vec2 hash22(vec2 src) {
 
 //------------------------------------------------------------------------------
 
-uvec2 murmurHash23(uvec3 src) {
+uvec2 murmurHash32(uvec3 src) {
     const uint M = 0x5bd1e995u;
     uvec2 h = uvec2(1190494759u, 2147483647u);
     src *= M; src ^= src>>24u; src *= M;
@@ -122,14 +123,14 @@ uvec2 murmurHash23(uvec3 src) {
 }
 
 // 2 outputs, 3 inputs
-vec2 hash23(vec3 src) {
-    uvec2 h = murmurHash23(floatBitsToUint(src));
+vec2 hash32(vec3 src) {
+    uvec2 h = murmurHash32(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
 //------------------------------------------------------------------------------
 
-uvec2 murmurHash24(uvec4 src) {
+uvec2 murmurHash42(uvec4 src) {
     const uint M = 0x5bd1e995u;
     uvec2 h = uvec2(1190494759u, 2147483647u);
     src *= M; src ^= src>>24u; src *= M;
@@ -139,14 +140,14 @@ uvec2 murmurHash24(uvec4 src) {
 }
 
 // 2 outputs, 4 inputs
-vec2 hash24(vec4 src) {
-    uvec2 h = murmurHash24(floatBitsToUint(src));
+vec2 hash42(vec4 src) {
+    uvec2 h = murmurHash42(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
 //------------------------------------------------------------------------------
 
-uvec3 murmurHash31(uint src) {
+uvec3 murmurHash13(uint src) {
     const uint M = 0x5bd1e995u;
     uvec3 h = uvec3(1190494759u, 2147483647u, 3559788179u);
     src *= M; src ^= src>>24u; src *= M;
@@ -156,14 +157,14 @@ uvec3 murmurHash31(uint src) {
 }
 
 // 3 outputs, 1 input
-vec3 hash31(float src) {
-    uvec3 h = murmurHash31(floatBitsToUint(src));
+vec3 hash13(float src) {
+    uvec3 h = murmurHash13(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
 //------------------------------------------------------------------------------
 
-uvec3 murmurHash32(uvec2 src) {
+uvec3 murmurHash23(uvec2 src) {
     const uint M = 0x5bd1e995u;
     uvec3 h = uvec3(1190494759u, 2147483647u, 3559788179u);
     src *= M; src ^= src>>24u; src *= M;
@@ -173,8 +174,8 @@ uvec3 murmurHash32(uvec2 src) {
 }
 
 // 3 outputs, 2 inputs
-vec3 hash32(vec2 src) {
-    uvec3 h = murmurHash32(floatBitsToUint(src));
+vec3 hash23(vec2 src) {
+    uvec3 h = murmurHash23(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
@@ -197,7 +198,7 @@ vec3 hash33(vec3 src) {
 
 //------------------------------------------------------------------------------
 
-uvec3 murmurHash34(uvec4 src) {
+uvec3 murmurHash43(uvec4 src) {
     const uint M = 0x5bd1e995u;
     uvec3 h = uvec3(1190494759u, 2147483647u, 3559788179u);
     src *= M; src ^= src>>24u; src *= M;
@@ -207,14 +208,14 @@ uvec3 murmurHash34(uvec4 src) {
 }
 
 // 3 outputs, 4 inputs
-vec3 hash34(vec4 src) {
-    uvec3 h = murmurHash34(floatBitsToUint(src));
+vec3 hash43(vec4 src) {
+    uvec3 h = murmurHash43(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
 //------------------------------------------------------------------------------
 
-uvec4 murmurHash41(uint src) {
+uvec4 murmurHash14(uint src) {
     const uint M = 0x5bd1e995u;
     uvec4 h = uvec4(1190494759u, 2147483647u, 3559788179u, 179424673u);
     src *= M; src ^= src>>24u; src *= M;
@@ -224,14 +225,14 @@ uvec4 murmurHash41(uint src) {
 }
 
 // 4 outputs, 1 input
-vec4 hash41(float src) {
-    uvec4 h = murmurHash41(floatBitsToUint(src));
+vec4 hash14(float src) {
+    uvec4 h = murmurHash14(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
 //------------------------------------------------------------------------------
 
-uvec4 murmurHash42(uvec2 src) {
+uvec4 murmurHash24(uvec2 src) {
     const uint M = 0x5bd1e995u;
     uvec4 h = uvec4(1190494759u, 2147483647u, 3559788179u, 179424673u);
     src *= M; src ^= src>>24u; src *= M;
@@ -241,14 +242,14 @@ uvec4 murmurHash42(uvec2 src) {
 }
 
 // 4 outputs, 2 inputs
-vec4 hash42(vec2 src) {
-    uvec4 h = murmurHash42(floatBitsToUint(src));
+vec4 hash24(vec2 src) {
+    uvec4 h = murmurHash24(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
 //------------------------------------------------------------------------------
 
-uvec4 murmurHash43(uvec3 src) {
+uvec4 murmurHash34(uvec3 src) {
     const uint M = 0x5bd1e995u;
     uvec4 h = uvec4(1190494759u, 2147483647u, 3559788179u, 179424673u);
     src *= M; src ^= src>>24u; src *= M;
@@ -258,8 +259,8 @@ uvec4 murmurHash43(uvec3 src) {
 }
 
 // 4 outputs, 3 inputs
-vec4 hash43(vec3 src) {
-    uvec4 h = murmurHash43(floatBitsToUint(src));
+vec4 hash34(vec3 src) {
+    uvec4 h = murmurHash34(floatBitsToUint(src));
     return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
 }
 
