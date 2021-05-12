@@ -1,0 +1,93 @@
+#version 330
+
+#define PLANET_COUNT 100
+#define UNIVERSE_COUNT 100
+
+#define FPS 60.0
+
+uvec4 murmurHash34(uvec3 src) {
+    const uint M = 0x5bd1e995u;
+    uvec4 h = uvec4(1190494759u, 2147483647u, 3559788179u, 179424673u);
+    src *= M; src ^= src>>24u; src *= M;
+    h *= M; h ^= src.x; h *= M; h ^= src.y; h *= M; h ^= src.z;
+    h ^= h>>13u; h *= M; h ^= h>>15u;
+    return h;
+}
+
+// 4 outputs, 3 inputs
+vec4 hash34(vec3 src) {
+    uvec4 h = murmurHash34(floatBitsToUint(src));
+    return uintBitsToFloat(h & 0x007fffffu | 0x3f800000u) - 1.0;
+}
+
+vec4 new_planet(vec2 pos, float time) {
+    return hash34(vec3(pos, time));
+}
+vec4 initial_planets(vec2 pos) {
+    return new_planet(pos, 0);
+}
+vec4 initial_timer(ivec2 pos) {
+    // Structure of the `timer` pixel
+    // R: time elapsed
+    // G: Unused
+    // B: Unused
+    // A: Unused
+    return vec4(0, 0, 0, 1);
+}
+vec4 initial_choice(ivec2 pos) {
+    // Structure of the `BufferChoice` pixel
+    // R: whether we should use the new planets.
+    // G: Unused
+    // B: Unused
+    // A: Unused
+    return vec4(0, 0, 0, 1);
+}
+
+
+feedback
+    EvolutionVars,
+    PlanetBuffer1,
+    PlanetBuffer2,
+    BufferChoice,
+    PlanetBuffer3
+{
+    float get_time() {
+        return texelFetch(EvolutionVars, ivec2(0), 0).r;
+    }
+    vec4 timer(ivec2 pos) {
+        float time = get_time();
+        return vec4(time + 1./FPS, 0,0, 1);
+    }
+
+    vec4 planet_buffer1(ivec2 pos) {
+        vec4 existing = texelFetch(PlanetBuffer3, pos, 0);
+        float time = get_time();
+        return new_planet(pos, time);
+    }
+    vec4 planet_buffer2(ivec2 pos) {
+        return texelFetch(PlanetBuffer1, pos, 0);
+    }
+    vec4 planet_buffer3(ivec2 pos) {
+        vec4 p2 = texelFetch(PlanetBuffer2, pos, 0);
+        vec4 p3 = texelFetch(PlanetBuffer3, pos, 0);
+        // if (pos.x%2 == 1) {
+        //     return texelFetch(BufferChoice, ivec2(pos.x, 0), 0);
+        // }
+        return mix(p3, p2, texelFetch(BufferChoice, ivec2(pos.x, 0), 0).r);
+        // return texelFetch(use_new? PlanetBuffer2 : PlanetBuffer3, pos, 0);
+    }
+
+    vec4 buffer_choice(ivec2 pos) {
+        float cost1 = texelFetch(PlanetBuffer1, pos, 0).r;
+        float cost3 = texelFetch(PlanetBuffer3, pos, 0).r;
+        return vec4((cost1 < cost3)? 0 : 1, 0, 0, 1);
+    }
+
+
+    EvolutionVars = glsl(timer, 2, 2) : initialize(initial_timer), full_range(true);
+    PlanetBuffer1 = glsl(planet_buffer1, UNIVERSE_COUNT, PLANET_COUNT) : initialize(initial_planets), full_range(true);
+    PlanetBuffer2 = glsl(planet_buffer2, UNIVERSE_COUNT, PLANET_COUNT) : initialize(initial_planets), full_range(true);
+    PlanetBuffer3 = glsl(planet_buffer3, UNIVERSE_COUNT, PLANET_COUNT) : initialize(initial_planets), full_range(true);
+    BufferChoice = glsl(buffer_choice, UNIVERSE_COUNT, 1) : initialize(initial_choice), full_range(true);
+} : update_rate(FPS), filter(nearest);
+
