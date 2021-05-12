@@ -11,6 +11,7 @@
 #define FPS 60.0
 
 param int universe_select : range(0, UNIVERSE_COUNT);
+param float temperature = .1 : logrange(1e-15, .5);
 
 glsl vec3 orange = vec3(1,.5,.0);
 glsl vec3 lime = vec3(.5,1,.0);
@@ -108,12 +109,27 @@ float[PLANET_COUNT] get_total_overlaps(Planet[PLANET_COUNT] planets) {
 }
 
 
-
-vec4 initial_AB(vec2 pos) {
-    return hash24(pos) * 2 - 1;
+vec4 new_planet(vec2 pos, float time) {
+    // Structure of PlanetBufferX:
+    // One column per universe.
+    // On the first half the pixels in each column:
+    //   R: Planet.a.x
+    //   G: Planet.a.y
+    //   B: Planet.b.x
+    //   A: Planet.b.y
+    // and in the second half:
+    //   R: Planet.r
+    //   G: Unused
+    //   B: Unused
+    //   A: Unused
+    if (pos.y < .5) {
+        return hash34(vec3(pos, time)) * 2 - 1;
+    } else {
+        return vec4(hash31(vec3(pos, time)) * .5, 0, 0, 1);
+    }
 }
-float initial_R(vec2 pos) {
-    return hash21(pos) * .5;
+vec4 initial_planets(vec2 pos) {
+    return new_planet(pos, 0);
 }
 vec4 initial_evolution_vars(ivec2 pos) {
     // Structure of the `evolution_vars` pixel
@@ -122,6 +138,14 @@ vec4 initial_evolution_vars(ivec2 pos) {
     // B: Unused
     // A: Unused
     return vec4(0, 1, 0, 1);
+}
+vec4 initial_choice(ivec2 pos) {
+    // Structure of the `BufferChoice` pixel
+    // R: whether we should use the new planets from buffer1.
+    // G: Unused
+    // B: Unused
+    // A: Unused
+    return vec4(0, 0, 1, 1);
 }
 
 float cost_function(in Planet[PLANET_COUNT] planets) {
@@ -138,36 +162,48 @@ float cost_function(in Planet[PLANET_COUNT] planets) {
     return 1000*total_overlap + 10*excess_apogee - total_radius;
 }
 
-feedback Planet_ABs, Planet_Rs, EvolutionVars, UniverseRender {
-    Planet[PLANET_COUNT] get_planets(int universe) {
+feedback PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, EvolutionVars, UniverseRender {
+    Planet[PLANET_COUNT] get_planets(sampler2D planet_buffer, int universe) {
         Planet[PLANET_COUNT] planets;
         for (int i=0; i<PLANET_COUNT; ++i) {
-            vec4 ab = texelFetch(Planet_ABs, ivec2(universe, i), 0);
-            float r = texelFetch(Planet_Rs, ivec2(universe, i), 0).r;
+            vec4 ab = texelFetch(planet_buffer, ivec2(universe, i), 0);
+            float r = texelFetch(planet_buffer, ivec2(universe, i+PLANET_COUNT), 0).r;
             planets[i] = Planet(ab.xy, ab.zw, r);
         }
         return planets;
     }
-    Planet[PLANET_COUNT] get_new_planets(int universe, vec2 pos) {
-        float time = texelFetch(EvolutionVars, ivec2(0), 0).r;
+    float get_time() {
+        return texelFetch(EvolutionVars, ivec2(0), 0).r;
+    }
 
-        Planet[PLANET_COUNT] planets;
-        for (int i=0; i<PLANET_COUNT; ++i) {
-            vec4 ab = murmurHash44(vec4(pos, universe, i*2));
-            float r = murmurHash41(vec4(pos, universe, i*2+1));
-            planets[i] = Planet(ab.xy, ab.zw, r);
+    vec4 planet_buffer1(ivec2 pos) {
+        vec4 existing = texelFetch(PlanetBuffer3, pos, 0);
+        float time = get_time();
+        if (pos.y < PLANET_COUNT) {
+            return hash34(vec3(pos, time)) * 2 - 1;
+        } else {
+            return vec4(hash31(vec3(pos, time)) * .5, 0, 0, 1);
         }
-        return planets;
     }
-    vec4 planet_AB(ivec2 pos) {
-        return texelFetch(Planet_ABs, pos, 0);
+    vec4 planet_buffer2(ivec2 pos) {
+        return texelFetch(PlanetBuffer1, pos, 0);
     }
-    Planet_ABs = glsl(planet_AB, UNIVERSE_COUNT, PLANET_COUNT) : initialize(initial_AB), full_range(true);
+    vec4 planet_buffer3(ivec2 pos) {
+        vec4 p2 = texelFetch(PlanetBuffer2, pos, 0);
+        vec4 p3 = texelFetch(PlanetBuffer3, pos, 0);
+        // if (pos.x%2 == 1) {
+        //     return texelFetch(BufferChoice, ivec2(pos.x, 0), 0);
+        // }
+        return mix(p3, p2, texelFetch(BufferChoice, ivec2(pos.x, 0), 0).r);
+        // return texelFetch(use_new? PlanetBuffer2 : PlanetBuffer3, pos, 0);
+    }
 
-    float planet_R(ivec2 pos) {
-        return texelFetch(Planet_Rs, pos, 0).r;
+    vec4 buffer_choice(ivec2 pos) {
+        float cost1 = cost_function(get_planets(PlanetBuffer1, pos.x));
+        float cost3 = cost_function(get_planets(PlanetBuffer3, pos.x));
+        // TODO: randomly accept or not.
+        return vec4((cost1 < cost3)? 0 : 1, 0, 0, 1);
     }
-    Planet_Rs = glsl(planet_R, UNIVERSE_COUNT, PLANET_COUNT) : initialize(initial_R), full_range(true);
 
     vec4 evolution_vars(ivec2 pos) {
         vec4 evars = texelFetch(EvolutionVars, pos, 0);
@@ -177,16 +213,15 @@ feedback Planet_ABs, Planet_Rs, EvolutionVars, UniverseRender {
         // evars.g = 1;
         return evars;
     }
-    EvolutionVars = glsl(evolution_vars, 2, 2) : initialize(initial_evolution_vars), full_range(true);
 
 
     vec3 universe_render(vec2 pos) {
         // transform into a -1,-1  to 1,1 coordinate system
         pos -= .5;
         pos *= 2;
-        float time = texelFetch(EvolutionVars, ivec2(0), 0).r;
+        float time = get_time();
 
-        Planet[PLANET_COUNT] planets = get_planets(universe_select);
+        Planet[PLANET_COUNT] planets = get_planets(PlanetBuffer1, universe_select);
         float[PLANET_COUNT] total_overlaps = get_total_overlaps(planets);
 
         Planet zero = Planet(vec2(0), vec2(0), .005);
@@ -201,8 +236,13 @@ feedback Planet_ABs, Planet_Rs, EvolutionVars, UniverseRender {
         col += float(printValue(cost_function(planets), ivec2(pos*100))) * lime;
         return exposure(col);
     }
-    UniverseRender = glsl(universe_render, 512, 512);
 
+    PlanetBuffer1 = glsl(planet_buffer1, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
+    PlanetBuffer2 = glsl(planet_buffer2, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
+    PlanetBuffer3 = glsl(planet_buffer3, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
+    BufferChoice = glsl(buffer_choice, UNIVERSE_COUNT, 1) : initialize(initial_choice), full_range(true);
+    EvolutionVars = glsl(evolution_vars, 2, 2) : initialize(initial_evolution_vars), full_range(true);
+    UniverseRender = glsl(universe_render, 512, 512);
 } : update_rate(FPS), filter(nearest);
 
 
