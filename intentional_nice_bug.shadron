@@ -8,7 +8,7 @@
 #define PLANET_COUNT 10
 #define UNIVERSE_COUNT 100
 
-#define FPS 60.0
+#define FPS 144.0
 
 param int universe_select : range(0, UNIVERSE_COUNT);
 param float temperature = .1 : logrange(1e-15, .5);
@@ -108,6 +108,12 @@ float[PLANET_COUNT] get_total_overlaps(Planet[PLANET_COUNT] planets) {
     return total_overlaps;
 }
 
+float cauchy_sample(float random_zero_to_one, float median, float scale) {
+    return median + scale * tan(PI*(random_zero_to_one-0.5));
+}
+vec4 cauchy_sample_4(vec4 random_zero_to_one, vec4 median, float scale) {
+    return median + scale * tan(PI*(random_zero_to_one-0.5));
+}
 
 vec4 new_planet(vec2 pos, float time) {
     // Structure of PlanetBufferX:
@@ -133,9 +139,9 @@ vec4 initial_planets(vec2 pos) {
 }
 vec4 initial_evolution_vars(ivec2 pos) {
     // Structure of the `evolution_vars` pixel
-    // R: time elapsed
-    // G: temperature
-    // B: Unused
+    // R: theta (time based but modulo'd for accuracy)
+    // G: time elapsed
+    // B: temperature
     // A: Unused
     return vec4(0, 1, 0, 1);
 }
@@ -148,18 +154,21 @@ vec4 initial_choice(ivec2 pos) {
     return vec4(0, 0, 1, 1);
 }
 
-float cost_function(in Planet[PLANET_COUNT] planets) {
+float cost_function(Planet[PLANET_COUNT] planets) {
     float[PLANET_COUNT] total_overlaps = get_total_overlaps(planets);
     float total_overlap = 0;
     float total_radius = 0;
-    float excess_apogee = 0;
-    for (int i=0; i<PLANET_COUNT; ++i) total_overlap += total_overlaps[i];
-    for (int i=0; i<PLANET_COUNT; ++i) total_radius += planets[i].r;
+    float total_apogee = 0;
+    float total_ecentricity = 0;
     for (int i=0; i<PLANET_COUNT; ++i) {
-        float apogee = length(planets[i].a) + length(planets[i].b);
-        excess_apogee = max(0, apogee-1);
+        total_overlap += total_overlaps[i];
+        total_radius += sqrt(planets[i].r);
+        // float apogee = length(planets[i].a) + length(planets[i].b);
+        // total_apogee += pow(max(0, apogee-0.5), 2);
+        total_apogee += length(planets[i].a) + length(planets[i].b);;
     }
-    return 1000*total_overlap + 10*excess_apogee - total_radius;
+    // total_radius = 0;
+    return 1000*total_overlap + 10*total_apogee - total_radius;
 }
 
 feedback PlanetBuffer, EvolutionVars, UniverseRender {
@@ -175,39 +184,63 @@ feedback PlanetBuffer, EvolutionVars, UniverseRender {
     float get_time() {
         return texelFetch(EvolutionVars, ivec2(0), 0).r;
     }
+    float get_temperature() {
+        return texelFetch(EvolutionVars, ivec2(0), 0).r;
+    }
 
 
     vec4 planet_buffer(ivec2 pos) {
         float time = get_time();
-        Planet[PLANET_COUNT] planets = get_planets(PlanetBuffer, pos.x);
+        Planet[PLANET_COUNT] planets;
+        planets = get_planets(PlanetBuffer, pos.x);
         float cost_old = cost_function(planets);
         for (int i=0; i<PLANET_COUNT; ++i) {
-            vec4 ab = hash34(vec3(pos.x, pos.y * 2 + 0, time)) * 2 - 1;
-            float r = hash31(vec3(pos.x, pos.y * 2 + 1, time)) * .5;
-            planets[i%10] = Planet(ab.xy, ab.zw, r);
+            vec4 ab = vec4(planets[i].a, planets[i].b);
+            ab = cauchy_sample_4(
+                hash34(vec3(pos.x, i + 1 * PLANET_COUNT, time)),
+                ab,
+                temperature
+            );
+            planets[i].a = ab.xy;
+            planets[i].b = ab.zw;
+            planets[i].r = max(
+                1e-15,
+                cauchy_sample(
+                    hash31(vec3(pos.x, i + 1 * PLANET_COUNT, time)),
+                    planets[i].r,
+                    0*temperature
+                )
+            );
         }
         float cost_new = cost_function(planets);
-        bool use_new = cost_new < cost_old;
-        use_new = true;
 
+        bool use_new = cost_new < cost_old;
+        // use_new = true;
+
+        vec4 prev = texelFetch(PlanetBuffer, pos, 0);
         if (use_new) {
-            Planet p = planets[pos.y % PLANET_COUNT];
+            Planet p = planets[(pos.y + 0) % PLANET_COUNT];
             if (pos.y < PLANET_COUNT) {
                 return vec4(p.a, p.b);
             } else {
-                return vec4(p.r, cost_new / 200000., 0, 1);
+                // return vec4(p.r, cost_new / 300000., 0, 1);
+                return vec4(
+                    p.r,
+                    cost_new * 3e-5,
+                    0,
+                    1
+                );
             }
         } else {
-            return texelFetch(PlanetBuffer, pos, 0);
+            return prev;
         }
     }
 
     vec4 evolution_vars(ivec2 pos) {
         vec4 evars = texelFetch(EvolutionVars, pos, 0);
         evars.r = mod(evars.r + 1./FPS, TAU);
-        // evars.r = 1;
-        // evars.a = 1;
-        // evars.g = 1;
+        evars.g = evars.g + 1./FPS;
+        evars.b = temperature;
         return evars;
     }
 
