@@ -165,10 +165,13 @@ float cost_function(Planet[PLANET_COUNT] planets) {
         total_radius += sqrt(planets[i].r);
         // float apogee = length(planets[i].a) + length(planets[i].b);
         // total_apogee += pow(max(0, apogee-0.5), 2);
-        total_apogee += length(planets[i].a) + length(planets[i].b);;
+        float la = length(planets[i].a);
+        float lb = length(planets[i].b);
+        total_apogee += la + lb;
+        total_ecentricity += max(la, lb) - min(la, lb);
     }
     // total_radius = 0;
-    return 1000*total_overlap + 10*total_apogee - total_radius;
+    return 1000*total_overlap + 10*total_apogee - total_radius + 10*total_ecentricity;
 }
 
 feedback PlanetBuffer, EvolutionVars, UniverseRender {
@@ -204,11 +207,11 @@ feedback PlanetBuffer, EvolutionVars, UniverseRender {
             planets[i].a = ab.xy;
             planets[i].b = ab.zw;
             planets[i].r = max(
-                1e-15,
+                1e-3,
                 cauchy_sample(
                     hash31(vec3(pos.x, i + 1 * PLANET_COUNT, time)),
                     planets[i].r,
-                    0*temperature
+                    .1*temperature
                 )
             );
         }
