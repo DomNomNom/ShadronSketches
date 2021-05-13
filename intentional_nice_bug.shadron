@@ -163,11 +163,11 @@ float cost_function(in Planet[PLANET_COUNT] planets) {
 }
 
 feedback PlanetBuffer, EvolutionVars, UniverseRender {
-    Planet[PLANET_COUNT] get_planets(sampler2D planet_buffer_, int universe) {
+    Planet[PLANET_COUNT] get_planets(sampler2D planet_buffer, int universe) {
         Planet[PLANET_COUNT] planets;
         for (int i=0; i<PLANET_COUNT; ++i) {
-            vec4 ab = texelFetch(planet_buffer_, ivec2(universe, i), 0);
-            float r = texelFetch(planet_buffer_, ivec2(universe, i+PLANET_COUNT), 0).r;
+            vec4 ab = texelFetch(planet_buffer, ivec2(universe, i), 0);
+            float r = texelFetch(planet_buffer, ivec2(universe, i+PLANET_COUNT), 0).r;
             planets[i] = Planet(ab.xy, ab.zw, r);
         }
         return planets;
@@ -178,55 +178,28 @@ feedback PlanetBuffer, EvolutionVars, UniverseRender {
 
 
     vec4 planet_buffer(ivec2 pos) {
-        // float time = get_time();
-        // Planet[PLANET_COUNT] planets = get_planets(PlanetBuffer, pos.x);
-        // float cost_old = cost_function(planets);
-        // for (int i=0; i<PLANET_COUNT; ++i) {
-        //     vec4 ab = hash34(vec3(pos.x, pos.y * 2 + 0, time)) * 2 - 1;
-        //     float r = hash31(vec3(pos.x, pos.y * 2 + 1, time)) * .5;
-        //     // planets[i] = Planet(ab.xy, ab.zw, r);
-        //     // planets[i].a = ab.xy;
-        //     // planets[i].b = ab.zw;
-        //     // planets[i].r = r;
-        // }
-
-        Planet[10] planets = Planet[10](
-            Planet(vec2(1), vec2(0), .3),
-            Planet(vec2(1), vec2(0), .3),
-            Planet(vec2(1), vec2(0), .3),
-            Planet(vec2(1), vec2(0), .3),
-            Planet(vec2(1), vec2(0), .3),
-            Planet(vec2(1), vec2(0), .3),
-            Planet(vec2(1), vec2(0), .3),
-            Planet(vec2(1), vec2(0), .3),
-            Planet(vec2(1), vec2(0), .3),
-            Planet(vec2(1), vec2(0), .3)
-        );
-        int universe = pos.x;
-        // for (int i=0; i<PLANET_COUNT; ++i) {
-        //     vec4 ab = texelFetch(PlanetBuffer, ivec2(universe, i), 0);
-        //     float r = texelFetch(PlanetBuffer, ivec2(universe, i+PLANET_COUNT), 0).r;
-        //     // planets[i] = Planet(ab.xy, ab.zw, r);
-        // }
-        Planet p = planets[pos.y % 10];
-        if (pos.y < PLANET_COUNT) {
-            return vec4(p.a, p.b);
-        } else {
-            return vec4(p.r, 0, 0, 1);
+        float time = get_time();
+        Planet[PLANET_COUNT] planets = get_planets(PlanetBuffer, pos.x);
+        float cost_old = cost_function(planets);
+        for (int i=0; i<PLANET_COUNT; ++i) {
+            vec4 ab = hash34(vec3(pos.x, pos.y * 2 + 0, time)) * 2 - 1;
+            float r = hash31(vec3(pos.x, pos.y * 2 + 1, time)) * .5;
+            planets[i%10] = Planet(ab.xy, ab.zw, r);
         }
-        // // float cost_new = cost_function(planets);
-        // // bool use_new = cost_new < cost_old;
-        // bool use_new = true;
+        float cost_new = cost_function(planets);
+        bool use_new = cost_new < cost_old;
+        use_new = true;
 
-        // if (use_new) {
-        //     if (pos.y < PLANET_COUNT) {
-        //         return vec4(planets[pos.y].a, planets[pos.y].b);
-        //     } else {
-        //         return vec4(planets[pos.y].r, 0, 0, 1);
-        //     }
-        // } else {
-        //     return texelFetch(PlanetBuffer, pos, 0);
-        // }
+        if (use_new) {
+            Planet p = planets[pos.y % PLANET_COUNT];
+            if (pos.y < PLANET_COUNT) {
+                return vec4(p.a, p.b);
+            } else {
+                return vec4(p.r, cost_new / 200000., 0, 1);
+            }
+        } else {
+            return texelFetch(PlanetBuffer, pos, 0);
+        }
     }
 
     vec4 evolution_vars(ivec2 pos) {
