@@ -13,6 +13,7 @@
 
 param int universe_select : range(0, UNIVERSE_COUNT-1);
 param float temperature = .1 : logrange(1e-15, 10);
+param float acceptance_temperature = 10 : logrange(1e-5, 1000);
 
 param float weight_overlap = 1000 : logrange(1e-5, 1e5);
 param float weight_apogee = 10 : logrange(1e-5, 1e5);
@@ -148,8 +149,8 @@ vec4 gaussian_pixel(ivec2 pos, float time) {
 }
 float rng_scale_implementation(int universe, float time) {
     // So we want to do the following thing
-    //     create a uniformly random unit vector in 5D space,
-    //     then step along it with the cauchy distribution.
+    //     sample a uniformly random unit vector in 5D space,
+    //     then step along it with a sample from a cauchy distribution.
     // To generate the first part we use a normal distribution for each dimension
     // then normalize it then scale it.
     // The normalization factor and the cauchy scale can be computed centrally
@@ -278,8 +279,10 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Ev
     vec4 buffer_choice(ivec2 pos) {
         float cost1 = cost_function(get_planets(PlanetBuffer1, pos.x));
         float cost3 = cost_function(get_planets(PlanetBuffer3, pos.x));
+        float acceptance_probability = exp((cost3 - cost1) / acceptance_temperature);
+        float r = hash31(vec3(pos + ivec2(UNIVERSE_COUNT, 0), get_time()));
         // TODO: randomly accept or not.
-        return vec4((cost1 < cost3)? 1 : 0, 0, 0, 1);
+        return vec4(r < acceptance_probability? 1 : 0, 0, 0, 1);
     }
 
     vec4 evolution_vars(ivec2 pos) {
