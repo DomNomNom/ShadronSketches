@@ -9,9 +9,16 @@
 #define UNIVERSE_COUNT 100
 
 #define FPS 144.0
+#define TIMESTEP (1./FPS)
 
-param int universe_select : range(0, UNIVERSE_COUNT);
-param float temperature = .1 : logrange(1e-15, .5);
+param int universe_select : range(0, UNIVERSE_COUNT-1);
+param float temperature = .1 : logrange(1e-15, 10);
+
+param float weight_overlap = 1000 : logrange(1e-5, 1e5);
+param float weight_apogee = 10 : logrange(1e-5, 1e5);
+param float weight_radius = 1 : logrange(1e-5, 1e5);
+param float weight_ecentricity = 10 : logrange(1e-5, 1e5);
+
 
 glsl vec3 orange = vec3(1,.5,.0);
 glsl vec3 lime = vec3(.5,1,.0);
@@ -108,12 +115,58 @@ float[PLANET_COUNT] get_total_overlaps(Planet[PLANET_COUNT] planets) {
     return total_overlaps;
 }
 
-float cauchy_sample(float random_zero_to_one, float median, float scale) {
+float cauchy_sample_1(float random_zero_to_one, float median, float scale) {
     return median + scale * tan(PI*(random_zero_to_one-0.5));
 }
 vec4 cauchy_sample_4(vec4 random_zero_to_one, vec4 median, float scale) {
     return median + scale * tan(PI*(random_zero_to_one-0.5));
 }
+vec4 gaussian_sample_1(vec2 random_zero_to_one) {
+    // This is a bit unusual to take two arguments for one random number.
+    // https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform
+    return sqrt(-2.0 * log(max(1e-15, random_zero_to_one.x))) * sin(2.0 * PI * random_zero_to_one.y);
+}
+vec2 gaussian_sample_2(vec2 random_zero_to_one) {
+    // https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform
+    return sqrt(-2.0 * log(random_zero_to_one.x + 1e-15)) * vec2(
+        sin(2.0 * PI * random_zero_to_one.y),
+        cos(2.0 * PI * random_zero_to_one.y)
+    );
+}
+vec4 gaussian_sample_4(vec4 random_zero_to_one) {
+    return vec4(
+        gaussian_sample_2(random_zero_to_one.xy),
+        gaussian_sample_2(random_zero_to_one.zw)
+    );
+}
+
+
+vec4 gaussian_pixel(ivec2 pos, float time) {
+    vec4 gaussian4 = gaussian_sample_4(hash34(vec3(time, pos)));
+    if (pos.y >= PLANET_COUNT) gaussian4 *= vec4(1, 0, 0, 0); // we only take one random variable per planet size pixel.
+    return gaussian4;
+}
+float rng_scale_implementation(int universe, float time) {
+    // So we want to do the following thing
+    //     create a uniformly random unit vector in 5D space,
+    //     then step along it with the cauchy distribution.
+    // To generate the first part we use a normal distribution for each dimension
+    // then normalize it then scale it.
+    // The normalization factor and the cauchy scale can be computed centrally
+    // such that we avoid redoing it in each texel of PlanetBuffer1.
+    // We have to be careful to use the same time seed when calculating this scale as when using it.
+    float total_gaussian_length_squared = 0;
+    for (int i=0; i<2*PLANET_COUNT; ++i) {
+        vec4 g = gaussian_pixel(ivec2(universe, i), time);
+        total_gaussian_length_squared += dot(g, g);
+    }
+    return cauchy_sample_1(
+        hash21(vec2(universe, time)),
+        0,
+        temperature
+    ) / sqrt(total_gaussian_length_squared);
+}
+
 
 vec4 new_planet(vec2 pos, float time) {
     // Structure of PlanetBufferX:
@@ -139,11 +192,11 @@ vec4 initial_planets(vec2 pos) {
 }
 vec4 initial_evolution_vars(ivec2 pos) {
     // Structure of the `evolution_vars` pixel
-    // R: theta (time based but modulo'd for accuracy)
+    // R: animation theta (time based but modulo'd for accuracy)
     // G: time elapsed
     // B: temperature
-    // A: Unused
-    return vec4(0, 1, 0, 1);
+    // A: time elapse of the previous frame
+    return vec4(0, 1, 0, -TIMESTEP);
 }
 vec4 initial_choice(ivec2 pos) {
     // Structure of the `BufferChoice` pixel
@@ -152,6 +205,9 @@ vec4 initial_choice(ivec2 pos) {
     // B: Unused
     // A: Unused
     return vec4(0, 0, 1, 1);
+}
+float initial_rng_scale(ivec2 pos) {
+    return rng_scale_implementation(pos.x, -TIMESTEP);
 }
 
 float cost_function(Planet[PLANET_COUNT] planets) {
@@ -171,10 +227,17 @@ float cost_function(Planet[PLANET_COUNT] planets) {
         total_ecentricity += max(la, lb) - min(la, lb);
     }
     // total_radius = 0;
-    return 1000*total_overlap + 10*total_apogee - total_radius + 10*total_ecentricity;
+    return (
+        0
+        + weight_overlap * total_overlap
+        + weight_apogee * total_apogee
+        - weight_radius * total_radius
+        + weight_ecentricity * total_ecentricity
+    );
 }
 
-feedback PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, EvolutionVars, UniverseRender {
+feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, EvolutionVars, UniverseRender {
+
     Planet[PLANET_COUNT] get_planets(sampler2D planet_buffer, int universe) {
         Planet[PLANET_COUNT] planets;
         for (int i=0; i<PLANET_COUNT; ++i) {
@@ -184,34 +247,20 @@ feedback PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, EvolutionVar
         }
         return planets;
     }
-    float get_time() {
-        return texelFetch(EvolutionVars, ivec2(0), 0).r;
-    }
-    float get_temperature() {
-        return texelFetch(EvolutionVars, ivec2(0), 0).r;
+    float get_time() {            return texelFetch(EvolutionVars, ivec2(0), 0).r;    }
+    float get_animation_theta() { return texelFetch(EvolutionVars, ivec2(0), 0).g;    }
+    float get_temperature() {     return texelFetch(EvolutionVars, ivec2(0), 0).b;    }
+    float get_prev_time() {       return texelFetch(EvolutionVars, ivec2(0), 0).a;    }
+
+    float rng_scale(ivec2 pos) {
+        return rng_scale_implementation(pos.x, get_prev_time());
     }
 
     vec4 planet_buffer1(ivec2 pos) {
-
+        vec4 random_sample = texelFetch(RngScale, ivec2(pos.x, 0), 0).r * gaussian_pixel(pos, get_time());
+        // if (pos.y >= PLANET_COUNT) random_sample.a = 1;
         vec4 prev = texelFetch(PlanetBuffer3, pos, 0);
-        float time = get_time();
-        if (pos.y < PLANET_COUNT) {
-            return cauchy_sample_4(
-                hash34(vec3(pos, time)),
-                prev,
-                temperature
-            );
-        } else {
-            float r = max(
-                1e-3,
-                cauchy_sample(
-                    hash31(vec3(pos, time)),
-                    prev.r,
-                    .1*temperature
-                )
-            );
-            return vec4(r, 0, 0, 1);
-        }
+        return prev + random_sample;
     }
     vec4 planet_buffer2(ivec2 pos) {
         return texelFetch(PlanetBuffer1, pos, 0);
@@ -235,10 +284,10 @@ feedback PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, EvolutionVar
 
     vec4 evolution_vars(ivec2 pos) {
         vec4 evars = texelFetch(EvolutionVars, pos, 0);
-        evars.r = mod(evars.r + 1./FPS, TAU);
-        // evars.r = 1;
-        // evars.a = 1;
-        // evars.g = 1;
+        evars.r = mod(evars.r + TIMESTEP, TAU);
+        evars.g = evars.g + TIMESTEP;
+        evars.b = 1;
+        evars.a = evars.g;
         return evars;
     }
 
@@ -265,6 +314,7 @@ feedback PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, EvolutionVar
         return exposure(col);
     }
 
+    RngScale = glsl(rng_scale, UNIVERSE_COUNT, 1) : initialize(initial_rng_scale), full_range(true);
     PlanetBuffer1 = glsl(planet_buffer1, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
     PlanetBuffer2 = glsl(planet_buffer2, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
     PlanetBuffer3 = glsl(planet_buffer3, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
