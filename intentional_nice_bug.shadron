@@ -5,7 +5,7 @@
 #include "library/complexNumbers.shadron"
 #include "library/murmurHash.shadron"
 
-#define PLANET_COUNT 10
+#define PLANET_COUNT 16
 #define UNIVERSE_COUNT 100
 #define TEMPERATURE_BUFFER_SIZE 80
 
@@ -14,13 +14,13 @@
 
 
 param int universe_select : range(0, UNIVERSE_COUNT-1);
-param float initial_temperature = .1 : logrange(1e-15, 10);
-param float temperature_buffer_log_range = 2 : range(0, 5);
-param float acceptance_temperature = 10 : logrange(1e-5, 1000);
+param float initial_temperature = 10 : logrange(1e-15, 100);
+param float temperature_buffer_log_range = 2 : range(0, 10);
+param float acceptance_temperature = .1 : logrange(1e-5, 1000);
 
-param float weight_overlap = 1000 : logrange(1e-5, 1e5);
-param float weight_apogee = 10 : logrange(1e-5, 1e5);
-param float weight_radius = 1 : logrange(1e-5, 1e5);
+param float weight_overlap = 420 : logrange(1e-5, 1e5);
+param float weight_apogee = 8 : logrange(1e-5, 1e5);
+param float weight_radius = 21 : logrange(1e-5, 1e5);
 param float weight_ecentricity = 10 : logrange(1e-5, 1e5);
 
 
@@ -209,7 +209,10 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
     }
 
     float get_temperature() {
-        return texelFetch(TemperatureBuffer, ivec2(0,0), 0).r;
+        return texelFetch(TemperatureBuffer, ivec2(shadron_Step % TEMPERATURE_BUFFER_SIZE, 0), 0).r;
+    }
+    float get_central_temperature() {
+        return texelFetch(TemperatureBuffer, ivec2(TEMPERATURE_BUFFER_SIZE/2, 0), 0).r;
     }
 
 
@@ -274,25 +277,31 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
     vec4 initialize_buffer_choice(ivec2 pos) {
         // Structure of the `BufferChoice` pixel
         // R: whether we should use the new planets from buffer1.
-        // G: Unused
+        // G: -change in cost.
         // B: Unused
         // A: Unused
-        return vec4(0, 0, 1, 1);
+        return vec4(0, 0, 0, 1);
     }
     vec4 update_buffer_choice(ivec2 pos) {
         float cost1 = cost_function(get_planets(PlanetBuffer1, pos.x));
         float cost3 = cost_function(get_planets(PlanetBuffer3, pos.x));
-        float acceptance_probability = exp((cost3 - cost1) / acceptance_temperature);
-        float r = hash31(vec3(pos + ivec2(UNIVERSE_COUNT, 0), shadron_Step));
-        // TODO: randomly accept or not.
-        return vec4(r < acceptance_probability? 1 : 0, 0, 0, 1);
+        float change = cost1 - cost3;
+        float acceptance_probability = exp(-change / acceptance_temperature);
+        if (isnan(cost1) || isinf(cost1)) acceptance_probability = 0;
+        if (isnan(change) || isinf(change)) change = 0;
+        bool accepted = hash31(vec3(pos.x + UNIVERSE_COUNT, pos.y, shadron_Step)) < acceptance_probability;
+        return vec4(
+            accepted ? 1 : 0,
+            accepted ? -change : 0,
+            0,
+            1
+        );
     }
 
 
     vec4 initialize_temperature_buffer(ivec2 pos) {
-        // Structure of the `evolution_vars` pixel
         // R: temperature
-        // G: measured total improvment
+        // G: negated total improvment
         // B: Unused
         // A: Unused
         float log_top = log(initial_temperature) + temperature_buffer_log_range / 2;
@@ -300,21 +309,42 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
         float log_temperature = mix(log_top, log_bot, pos.x / float(TEMPERATURE_BUFFER_SIZE));
         return vec4(
             exp(log_temperature),
-            log_temperature + 2,
-            // pos.x / float(TEMPERATURE_BUFFER_SIZE),
-            log_temperature,
+            0,
+            0,
             1
         );
     }
     vec4 update_temperature_buffer(ivec2 pos) {
-        vec4 right = texelFetch(TemperatureBuffer, ivec2((pos.x + 1) % TEMPERATURE_BUFFER_SIZE, 0), 0);
-        return right;
-        // if (pos.x == 0) {
-        //     // for (int i=0; i<TEMPERATURE_BUFFER_SIZE; ++i) {
-        //     //     texelFetch(TemperatureBuffer, ivec2(i, 0), 0);
-        //     // }
-        // }
-        // return vec4(0,0,0,0);
+        vec4 t = texelFetch(TemperatureBuffer, pos, 0);
+        int s = shadron_Step % TEMPERATURE_BUFFER_SIZE;
+        const int BUFFER_DELAY = 3;
+        if (s == 0) {
+            float cost_change_hot = 0;
+            float cost_change_cold = 0;
+            for (int i=BUFFER_DELAY; i<TEMPERATURE_BUFFER_SIZE/2; ++i) {
+                cost_change_hot += -texelFetch(TemperatureBuffer, ivec2(i, 0), 0).g;
+            }
+            for (int i=TEMPERATURE_BUFFER_SIZE/2+1; i<TEMPERATURE_BUFFER_SIZE - BUFFER_DELAY; ++i) {
+                cost_change_cold += -texelFetch(TemperatureBuffer, ivec2(i, 0), 0).g;
+            }
+            float central_temperature = texelFetch(TemperatureBuffer, ivec2(TEMPERATURE_BUFFER_SIZE/2, 0), 0).r;
+            float log_top = log(central_temperature) + temperature_buffer_log_range / 2;
+            float log_bot = log(central_temperature) - temperature_buffer_log_range / 2;
+            float log_temperature = mix(log_top, log_bot, pos.x / float(TEMPERATURE_BUFFER_SIZE));
+
+            float log_change = temperature_buffer_log_range/10 * ((cost_change_cold < cost_change_hot)? -1 : 1);
+            // float log_change = -1;
+            t.r = exp(log(t.r) + log_change);
+            t.g = 0;
+        }
+        if (pos.x + BUFFER_DELAY == s) {  // The +3 is trying to account for buffer delay in experiment
+            float total_neg_change = 0;
+            for (int i=0; i<UNIVERSE_COUNT; ++i) {
+                total_neg_change += texelFetch(BufferChoice, ivec2(i, 0), 0).g;
+            }
+            t.g = total_neg_change;
+        }
+        return t;
     }
 
 
@@ -335,7 +365,9 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
 
         // planet_stencil(diff, pos, time) * red +
         // is_overlap_time(p1, p2, time) * red +
-        col += float(printValue(cost_function(planets), ivec2(pos*100))) * lime;
+        // col += float(printValue(cost_function(planets), ivec2(pos*64))) * lime;
+        col += float(printValue(get_central_temperature(), ivec2(pos*64) + ivec2(0, 11))) * orange;
+
         return exposure(col);
     }
 
