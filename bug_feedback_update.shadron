@@ -1,0 +1,16 @@
+watch var int frame_counter;
+void on_initialize()  {    frame_counter = 0;  }
+void on_update(float dt) { frame_counter += 1; }
+event initialize() = on_initialize;
+event update() = on_update;
+
+feedback Foo {
+    vec3 initial_foo(vec2 pos) {
+        return vec3(pos, 0);
+    }
+    vec3 foo(vec2 pos) {
+        return texture(Foo, mod(pos + .1, vec2(1))).rgb;
+    }
+
+    Foo = glsl(foo, 64, 64) : initialize(initial_foo);
+} : update_rate(3);

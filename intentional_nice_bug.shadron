@@ -7,12 +7,15 @@
 
 #define PLANET_COUNT 10
 #define UNIVERSE_COUNT 100
+#define TEMPERATURE_BUFFER_SIZE 80
 
-#define FPS 144.0
+#define FPS 5.0
 #define TIMESTEP (1./FPS)
 
+
 param int universe_select : range(0, UNIVERSE_COUNT-1);
-param float temperature = .1 : logrange(1e-15, 10);
+param float initial_temperature = .1 : logrange(1e-15, 10);
+param float temperature_buffer_log_range = 2 : range(0, 5);
 param float acceptance_temperature = 10 : logrange(1e-5, 1000);
 
 param float weight_overlap = 1000 : logrange(1e-5, 1e5);
@@ -25,6 +28,30 @@ glsl vec3 orange = vec3(1,.5,.0);
 glsl vec3 lime = vec3(.5,1,.0);
 glsl vec3 white = vec3(1,1,1);
 glsl vec3 red = vec3(1,.1,.0);
+
+
+var float time;
+var float prev_time;
+var float animation_theta;
+watch var int steps_until_temperature_reset;
+// watch int steps_until_temperature_reset
+void on_initialize()  {
+    animation_theta = 0;
+    time = 0;
+    prev_time = -TIMESTEP;
+    steps_until_temperature_reset = TEMPERATURE_BUFFER_SIZE;
+}
+void on_update(float dt) {
+    animation_theta = mod(animation_theta + dt, TAU);
+    prev_time = time;
+    time += dt;
+    steps_until_temperature_reset -= 1;
+    if (steps_until_temperature_reset < 0) steps_until_temperature_reset += TEMPERATURE_BUFFER_SIZE;
+}
+event initialize() = on_initialize;
+event update() = on_update;
+
+
 
 struct Planet {
     vec2 a;
@@ -147,7 +174,7 @@ vec4 gaussian_pixel(ivec2 pos, float time) {
     if (pos.y >= PLANET_COUNT) gaussian4 *= vec4(1, 0, 0, 0); // we only take one random variable per planet size pixel.
     return gaussian4;
 }
-float rng_scale_implementation(int universe, float time) {
+float rng_scale_implementation(int universe, float time, float temperature) {
     // So we want to do the following thing
     //     sample a uniformly random unit vector in 5D space,
     //     then step along it with a sample from a cauchy distribution.
@@ -191,13 +218,22 @@ vec4 new_planet(vec2 pos, float time) {
 vec4 initial_planets(vec2 pos) {
     return new_planet(pos, 0);
 }
-vec4 initial_evolution_vars(ivec2 pos) {
+vec4 initial_temperature_buffer(ivec2 pos) {
     // Structure of the `evolution_vars` pixel
-    // R: animation theta (time based but modulo'd for accuracy)
-    // G: time elapsed
-    // B: temperature
-    // A: time elapse of the previous frame
-    return vec4(0, 1, 0, -TIMESTEP);
+    // R: temperature
+    // G: measured total improvment
+    // B: Unused
+    // A: Unused
+    float log_top = log(initial_temperature) + temperature_buffer_log_range / 2;
+    float log_bot = log(initial_temperature) - temperature_buffer_log_range / 2;
+    float log_temperature = mix(log_top, log_bot, pos.x / float(TEMPERATURE_BUFFER_SIZE));
+    return vec4(
+        exp(log_temperature),
+        log_temperature + 6,
+        // pos.x,
+        log_temperature,
+        1
+    );
 }
 vec4 initial_choice(ivec2 pos) {
     // Structure of the `BufferChoice` pixel
@@ -208,7 +244,7 @@ vec4 initial_choice(ivec2 pos) {
     return vec4(0, 0, 1, 1);
 }
 float initial_rng_scale(ivec2 pos) {
-    return rng_scale_implementation(pos.x, -TIMESTEP);
+    return rng_scale_implementation(pos.x, -TIMESTEP, initial_temperature);
 }
 
 float cost_function(Planet[PLANET_COUNT] planets) {
@@ -237,8 +273,7 @@ float cost_function(Planet[PLANET_COUNT] planets) {
     );
 }
 
-feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, EvolutionVars, UniverseRender {
-
+feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, TemperatureBuffer, UniverseRender {
     Planet[PLANET_COUNT] get_planets(sampler2D planet_buffer, int universe) {
         Planet[PLANET_COUNT] planets;
         for (int i=0; i<PLANET_COUNT; ++i) {
@@ -248,17 +283,17 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Ev
         }
         return planets;
     }
-    float get_time() {            return texelFetch(EvolutionVars, ivec2(0), 0).r;    }
-    float get_animation_theta() { return texelFetch(EvolutionVars, ivec2(0), 0).g;    }
-    float get_temperature() {     return texelFetch(EvolutionVars, ivec2(0), 0).b;    }
-    float get_prev_time() {       return texelFetch(EvolutionVars, ivec2(0), 0).a;    }
+
+    float get_temperature() {
+        return texelFetch(TemperatureBuffer, ivec2(0,0), 0).r;
+    }
 
     float rng_scale(ivec2 pos) {
-        return rng_scale_implementation(pos.x, get_prev_time());
+        return rng_scale_implementation(pos.x, prev_time, get_temperature());
     }
 
     vec4 planet_buffer1(ivec2 pos) {
-        vec4 random_sample = texelFetch(RngScale, ivec2(pos.x, 0), 0).r * gaussian_pixel(pos, get_time());
+        vec4 random_sample = texelFetch(RngScale, ivec2(pos.x, 0), 0).r * gaussian_pixel(pos, time);
         // if (pos.y >= PLANET_COUNT) random_sample.a = 1;
         vec4 prev = texelFetch(PlanetBuffer3, pos, 0);
         return prev + random_sample;
@@ -280,18 +315,20 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Ev
         float cost1 = cost_function(get_planets(PlanetBuffer1, pos.x));
         float cost3 = cost_function(get_planets(PlanetBuffer3, pos.x));
         float acceptance_probability = exp((cost3 - cost1) / acceptance_temperature);
-        float r = hash31(vec3(pos + ivec2(UNIVERSE_COUNT, 0), get_time()));
+        float r = hash31(vec3(pos + ivec2(UNIVERSE_COUNT, 0), time));
         // TODO: randomly accept or not.
         return vec4(r < acceptance_probability? 1 : 0, 0, 0, 1);
     }
 
-    vec4 evolution_vars(ivec2 pos) {
-        vec4 evars = texelFetch(EvolutionVars, pos, 0);
-        evars.r = mod(evars.r + TIMESTEP, TAU);
-        evars.g = evars.g + TIMESTEP;
-        evars.b = 1;
-        evars.a = evars.g;
-        return evars;
+    vec4 temperature_buffer(ivec2 pos) {
+        vec4 right = texelFetch(TemperatureBuffer, ivec2((pos.x + 1) % TEMPERATURE_BUFFER_SIZE, 0), 0);
+        return right;
+        // if (pos.x == 0) {
+        //     // for (int i=0; i<TEMPERATURE_BUFFER_SIZE; ++i) {
+        //     //     texelFetch(TemperatureBuffer, ivec2(i, 0), 0);
+        //     // }
+        // }
+        // return vec4(0,0,0,0);
     }
 
 
@@ -299,16 +336,15 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Ev
         // transform into a -1,-1  to 1,1 coordinate system
         pos -= .5;
         pos *= 2;
-        float time = get_time();
 
         Planet[PLANET_COUNT] planets = get_planets(PlanetBuffer3, universe_select);
         float[PLANET_COUNT] total_overlaps = get_total_overlaps(planets);
 
         Planet zero = Planet(vec2(0), vec2(0), .005);
-        vec3 col = planet_stencil(zero, pos, time) * white;
+        vec3 col = planet_stencil(zero, pos, animation_theta) * white;
         for (int i=0; i<PLANET_COUNT; ++i) {
             float overlap = total_overlaps[i];
-            col += planet_stencil(planets[i], pos, time) * vec3(overlap, .5, overlap <= 0? 1:0);
+            col += planet_stencil(planets[i], pos, animation_theta) * vec3(overlap, .5, overlap <= 0? 1:0);
         }
 
         // planet_stencil(diff, pos, time) * red +
@@ -322,7 +358,7 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Ev
     PlanetBuffer2 = glsl(planet_buffer2, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
     PlanetBuffer3 = glsl(planet_buffer3, UNIVERSE_COUNT, 2*PLANET_COUNT) : initialize(initial_planets), full_range(true);
     BufferChoice = glsl(buffer_choice, UNIVERSE_COUNT, 1) : initialize(initial_choice), full_range(true);
-    EvolutionVars = glsl(evolution_vars, 2, 2) : initialize(initial_evolution_vars), full_range(true);
+    TemperatureBuffer = glsl(temperature_buffer, TEMPERATURE_BUFFER_SIZE, 1) : initialize(initial_temperature_buffer), full_range(true);
     UniverseRender = glsl(universe_render, 512, 512);
 } : update_rate(FPS), filter(nearest);
 
