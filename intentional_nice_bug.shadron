@@ -9,7 +9,7 @@
 #define UNIVERSE_COUNT 100
 #define TEMPERATURE_BUFFER_SIZE 80
 
-#define FPS 5.0
+#define FPS 144.0
 #define TIMESTEP (1./FPS)
 
 
@@ -29,27 +29,6 @@ glsl vec3 lime = vec3(.5,1,.0);
 glsl vec3 white = vec3(1,1,1);
 glsl vec3 red = vec3(1,.1,.0);
 
-
-var float time;
-var float prev_time;
-var float animation_theta;
-watch var int steps_until_temperature_reset;
-// watch int steps_until_temperature_reset
-void on_initialize()  {
-    animation_theta = 0;
-    time = 0;
-    prev_time = -TIMESTEP;
-    steps_until_temperature_reset = TEMPERATURE_BUFFER_SIZE;
-}
-void on_update(float dt) {
-    animation_theta = mod(animation_theta + dt, TAU);
-    prev_time = time;
-    time += dt;
-    steps_until_temperature_reset -= 1;
-    if (steps_until_temperature_reset < 0) steps_until_temperature_reset += TEMPERATURE_BUFFER_SIZE;
-}
-event initialize() = on_initialize;
-event update() = on_update;
 
 
 
@@ -229,8 +208,8 @@ vec4 initial_temperature_buffer(ivec2 pos) {
     float log_temperature = mix(log_top, log_bot, pos.x / float(TEMPERATURE_BUFFER_SIZE));
     return vec4(
         exp(log_temperature),
-        log_temperature + 6,
-        // pos.x,
+        log_temperature + 2,
+        // pos.x / float(TEMPERATURE_BUFFER_SIZE),
         log_temperature,
         1
     );
@@ -289,11 +268,11 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
     }
 
     float rng_scale(ivec2 pos) {
-        return rng_scale_implementation(pos.x, prev_time, get_temperature());
+        return rng_scale_implementation(pos.x, shadron_Step-1, get_temperature());
     }
 
     vec4 planet_buffer1(ivec2 pos) {
-        vec4 random_sample = texelFetch(RngScale, ivec2(pos.x, 0), 0).r * gaussian_pixel(pos, time);
+        vec4 random_sample = texelFetch(RngScale, ivec2(pos.x, 0), 0).r * gaussian_pixel(pos, shadron_Step);
         // if (pos.y >= PLANET_COUNT) random_sample.a = 1;
         vec4 prev = texelFetch(PlanetBuffer3, pos, 0);
         return prev + random_sample;
@@ -315,7 +294,7 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
         float cost1 = cost_function(get_planets(PlanetBuffer1, pos.x));
         float cost3 = cost_function(get_planets(PlanetBuffer3, pos.x));
         float acceptance_probability = exp((cost3 - cost1) / acceptance_temperature);
-        float r = hash31(vec3(pos + ivec2(UNIVERSE_COUNT, 0), time));
+        float r = hash31(vec3(pos + ivec2(UNIVERSE_COUNT, 0), shadron_Step));
         // TODO: randomly accept or not.
         return vec4(r < acceptance_probability? 1 : 0, 0, 0, 1);
     }
@@ -341,10 +320,10 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
         float[PLANET_COUNT] total_overlaps = get_total_overlaps(planets);
 
         Planet zero = Planet(vec2(0), vec2(0), .005);
-        vec3 col = planet_stencil(zero, pos, animation_theta) * white;
+        vec3 col = planet_stencil(zero, pos, shadron_Time) * white;
         for (int i=0; i<PLANET_COUNT; ++i) {
             float overlap = total_overlaps[i];
-            col += planet_stencil(planets[i], pos, animation_theta) * vec3(overlap, .5, overlap <= 0? 1:0);
+            col += planet_stencil(planets[i], pos, shadron_Time) * vec3(overlap, .5, overlap <= 0? 1:0);
         }
 
         // planet_stencil(diff, pos, time) * red +
