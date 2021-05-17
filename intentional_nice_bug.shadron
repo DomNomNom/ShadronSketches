@@ -5,7 +5,7 @@
 #include "library/complexNumbers.shadron"
 #include "library/murmurHash.shadron"
 
-#define PLANET_COUNT 16
+#define PLANET_COUNT 10
 #define UNIVERSE_COUNT 100
 #define TEMPERATURE_BUFFER_SIZE 80
 
@@ -367,6 +367,24 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
         // is_overlap_time(p1, p2, time) * red +
         // col += float(printValue(cost_function(planets), ivec2(pos*64))) * lime;
         col += float(printValue(get_central_temperature(), ivec2(pos*64) + ivec2(0, 11))) * orange;
+
+        Planet p = planets[0];
+        mat2 rot90 = mat2(0,-1,1,0);
+        col += red * float(abs(dot(pos, normalize(planet_pos(p, shadron_Time))*rot90)) < .01);
+
+        // https://math.stackexchange.com/a/1365667
+        float theta1 = complex_arg(p.a) + shadron_Time;
+        float theta2 = complex_arg(p.b) - shadron_Time;
+        float alpha = complex_arg(p.b) - complex_arg(p.a) - 2 * shadron_Time;
+        float u = length(p.b) * cos(alpha);
+        float v = length(p.b) * sin(alpha);
+        float beta = atan(v, length(p.a) + u);
+        float t = theta1 + beta;
+        t *= -1;
+
+        // float t = -complex_arg(cmul(p.a, ei(shadron_Time)) + cmul(p.b, ei(-shadron_Time)));
+        // float t = complex_arg(p.a) + complex_arg(p.b);
+        col += vec3(.1, .9, .1) * float(abs(dot(pos, vec2(sin(t), cos(t)))) < .01);
 
         return exposure(col);
     }
