@@ -223,8 +223,8 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
         return gaussian4;
     }
     float rng_scale_implementation(int universe, float time, float temperature) {
-        // So we want to do the following thing
-        //     sample a uniformly random unit vector in 5D space,
+        // So we want to do the following thing:
+        //     Sample a uniformly random unit vector in 5D space, (5 floats to define a planet)
         //     then step along it with a sample from a cauchy distribution.
         // To generate the first part we use a normal distribution for each dimension
         // then normalize it then scale it.
@@ -243,7 +243,7 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
         ) / sqrt(total_gaussian_length_squared);
     }
     float initialize_rng_scale(ivec2 pos) {
-        return rng_scale_implementation(pos.x, -TIMESTEP, initial_temperature);
+        return rng_scale_implementation(pos.x, -1, initial_temperature);
     }
     float update_rng_scale(ivec2 pos) {
         return rng_scale_implementation(pos.x, shadron_Step-1, get_temperature());
@@ -265,11 +265,7 @@ feedback RngScale, PlanetBuffer1, PlanetBuffer2, PlanetBuffer3, BufferChoice, Te
     vec4 update_planet_buffer3(ivec2 pos) {
         vec4 p2 = texelFetch(PlanetBuffer2, pos, 0);
         vec4 p3 = texelFetch(PlanetBuffer3, pos, 0);
-        // if (pos.x%2 == 1) {
-        //     return texelFetch(BufferChoice, ivec2(pos.x, 0), 0);
-        // }
         return mix(p3, p2, texelFetch(BufferChoice, ivec2(pos.x, 0), 0).r);
-        // return texelFetch(use_new? PlanetBuffer2 : PlanetBuffer3, pos, 0);
     }
 
 
