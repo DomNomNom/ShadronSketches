@@ -1,0 +1,94 @@
+#version 420
+
+#include "library/lerp.shadron"
+#include "library/colorSpaces.shadron"
+#include "library/complexNumbers.shadron"
+
+image inputFile = file() : map(clamp);
+image background = file() : map(clamp);
+image tileable_snow = file() : map(repeat);
+
+param vec2 headGreenSamplePosition = vec2(0.9, 0.5) : hidden();// range(0, 1);
+param float head_alpha_bias = 0.9 : hidden();//, range(0, 1);
+
+param float head_shift = .3;
+
+param float period = 1.0: range(0, 10);
+param int wiggle_speed = 2 : range(0, 10);
+
+glsl vec4 orange = vec4(1,.5,0,1);
+
+glsl float colorToAlpha(vec4 input, vec4 zeroAlphaColor) {
+    float dist;
+
+    // RGB distance
+    // dist = distance(zeroAlphaColor.rgb, input.rgb);
+
+    // // HSV distance
+    // vec3 hsv_alpha = rgb2hsv(zeroAlphaColor.rgb);
+    // vec3 hsv_input = rgb2hsv(input.rgb);
+    // float hueDiff = min(
+    //     abs(    hsv_alpha.x             -     hsv_input.x            ),
+    //     abs(mod(hsv_alpha.x + 0.5, 1.0) - mod(hsv_input.x + 0.5, 1.0))
+    // );
+    // float valueDiff = abs(hsv_alpha.z - hsv_input.z);
+    // // dist = valueDiff;
+    // // dist = hueDiff;
+    // dist = lerp(valueDiff, hueDiff, hsv_input.y);
+
+    // YUV distance. This is more accurate to the human eye.
+    dist = distance(rgb2yuv(zeroAlphaColor.rgb), rgb2yuv(input.rgb));
+    return applyBias(dist, head_alpha_bias);
+}
+
+
+glsl vec4 head_color(ivec2 pos) {
+    vec4 c = texture(inputFile, headGreenSamplePosition);
+    vec4 head = texelFetch(inputFile, pos, 0);
+    head.a = colorToAlpha(head, c);
+
+    // If we have neighboring pixels that are green, blend to alpha.
+    float acc = 0;
+    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2( 1, 0), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2( 1, 1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2( 0, 1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2(-1, 1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2(-1,-0), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2(-1,-1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2(-0,-1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2(-1,-1), 0), c) > .99 ? 0 : 1;
+    if (acc > 1.8) {
+        head.a -= head.g;
+    }
+
+    return head;
+}
+
+image Head = glsl(head_color, sizeof(inputFile));
+
+glsl vec4 blend(vec4 x, vec4 y) {
+    return vec4(lerp(x.rgb, y.rgb, y.a), clamp01(x.a + y.a));
+    // return vec4(0.5*(lerp(x.rgb, y.rgb, 1-x.a) + lerp(x.rgb, y.rgb, y.a)), clamp01(x.a + y.a));
+    // return vec4(lerp(x.rgb, y.rgb, 1-x.a), clamp01(x.a + y.a));
+    // return vec4(lerp(x.rgb, y.rgb, y.a), 1/(1/x.a + 1/y.a));
+    // return vec4(lerp(x.rgb, y.rgb, y.a/(x.a + y.a)), clamp01(x.a + y.a));
+}
+
+
+glsl vec4 xmas_card(vec2 pos, float time) {
+    time = mod(time, period);
+    float t = time / period;
+    float theta = time * TAU;
+
+    vec2 orbit = .005 * vec2(1, .2) *  vec2(cos(wiggle_speed * theta), sin(wiggle_speed * theta));
+
+    // painter's algorithm
+    vec4 c = vec4(0);
+    c = blend(c, texture(background, .99*orbit + pos));
+    c = blend(c, texture(tileable_snow, .3*orbit + pos + t*vec2(1, 2)));
+    c = blend(c, texture(Head, .2*orbit + pos + vec2(head_shift, 0)));
+    c = blend(c, texture(tileable_snow, .1*orbit + pos + (t+.335)*vec2(-1, 2)));
+    return c;
+}
+animation XmasCard = glsl(xmas_card, sizeof(inputFile));
+
