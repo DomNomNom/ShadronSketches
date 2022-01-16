@@ -1,24 +1,80 @@
-#version 420
+// #version 330
 
 #include "library/lerp.shadron"
 #include "library/colorSpaces.shadron"
 #include "library/complexNumbers.shadron"
 
-image inputFile = file() : map(clamp);
+
+
+vec3 hash( vec3 p ) // replace this by something better. really. do
+{
+    p = vec3( dot(p,vec3(127.1,311.7, 74.7)),
+              dot(p,vec3(269.5,183.3,246.1)),
+              dot(p,vec3(113.5,271.9,124.6)));
+
+    return -1.0 + 2.0*fract(sin(p)*43758.5453123);
+}
+
+// return value noise (in x) and its derivatives (in yzw)
+vec4 value_noise_and_derivative( in vec3 x )
+{
+    // grid
+    vec3 i = floor(x);
+    vec3 w = fract(x);
+
+    #if 1
+    // quintic interpolant
+    vec3 u = w*w*w*(w*(w*6.0-15.0)+10.0);
+    vec3 du = 30.0*w*w*(w*(w-2.0)+1.0);
+    #else
+    // cubic interpolant
+    vec3 u = w*w*(3.0-2.0*w);
+    vec3 du = 6.0*w*(1.0-w);
+    #endif
+
+    // gradients
+    vec3 ga = hash( i+vec3(0.0,0.0,0.0) );
+    vec3 gb = hash( i+vec3(1.0,0.0,0.0) );
+    vec3 gc = hash( i+vec3(0.0,1.0,0.0) );
+    vec3 gd = hash( i+vec3(1.0,1.0,0.0) );
+    vec3 ge = hash( i+vec3(0.0,0.0,1.0) );
+    vec3 gf = hash( i+vec3(1.0,0.0,1.0) );
+    vec3 gg = hash( i+vec3(0.0,1.0,1.0) );
+    vec3 gh = hash( i+vec3(1.0,1.0,1.0) );
+
+    // projections
+    float va = dot( ga, w-vec3(0.0,0.0,0.0) );
+    float vb = dot( gb, w-vec3(1.0,0.0,0.0) );
+    float vc = dot( gc, w-vec3(0.0,1.0,0.0) );
+    float vd = dot( gd, w-vec3(1.0,1.0,0.0) );
+    float ve = dot( ge, w-vec3(0.0,0.0,1.0) );
+    float vf = dot( gf, w-vec3(1.0,0.0,1.0) );
+    float vg = dot( gg, w-vec3(0.0,1.0,1.0) );
+    float vh = dot( gh, w-vec3(1.0,1.0,1.0) );
+
+    // interpolations
+    return vec4( va + u.x*(vb-va) + u.y*(vc-va) + u.z*(ve-va) + u.x*u.y*(va-vb-vc+vd) + u.y*u.z*(va-vc-ve+vg) + u.z*u.x*(va-vb-ve+vf) + (-va+vb+vc-vd+ve-vf-vg+vh)*u.x*u.y*u.z,    // value
+                 ga + u.x*(gb-ga) + u.y*(gc-ga) + u.z*(ge-ga) + u.x*u.y*(ga-gb-gc+gd) + u.y*u.z*(ga-gc-ge+gg) + u.z*u.x*(ga-gb-ge+gf) + (-ga+gb+gc-gd+ge-gf-gg+gh)*u.x*u.y*u.z +   // derivatives
+                 du * (vec3(vb,vc,ve) - va + u.yzx*vec3(va-vb-vc+vd,va-vc-ve+vg,va-vb-ve+vf) + u.zxy*vec3(va-vb-ve+vf,va-vb-vc+vd,va-vc-ve+vg) + u.yzx*u.zxy*(-va+vb+vc-vd+ve-vf-vg+vh) ));
+}
+
+
+image head_img = file() : map(clamp);
 image background = file() : map(clamp);
 image tileable_snow = file() : map(repeat);
+image text_img = file() : map(repeat);
 
 param vec2 headGreenSamplePosition = vec2(0.9, 0.5) : hidden();// range(0, 1);
 param float head_alpha_bias = 0.9 : hidden();//, range(0, 1);
 
-param float head_shift = .3;
+param float head_shift = .7;
 
-param float period = 1.0: range(0, 10);
+param float period = 10.0: range(0, 10);
 param int wiggle_speed = 2 : range(0, 10);
 
 glsl vec4 orange = vec4(1,.5,0,1);
 
-glsl float colorToAlpha(vec4 input, vec4 zeroAlphaColor) {
+glsl float colorToAlpha(vec4 color, vec4 zeroAlphaColor) {
     float dist;
 
     // RGB distance
@@ -37,26 +93,26 @@ glsl float colorToAlpha(vec4 input, vec4 zeroAlphaColor) {
     // dist = lerp(valueDiff, hueDiff, hsv_input.y);
 
     // YUV distance. This is more accurate to the human eye.
-    dist = distance(rgb2yuv(zeroAlphaColor.rgb), rgb2yuv(input.rgb));
+    dist = distance(rgb2yuv(zeroAlphaColor.rgb), rgb2yuv(color.rgb));
     return applyBias(dist, head_alpha_bias);
 }
 
 
 glsl vec4 head_color(ivec2 pos) {
-    vec4 c = texture(inputFile, headGreenSamplePosition);
-    vec4 head = texelFetch(inputFile, pos, 0);
+    vec4 c = texture(head_img, headGreenSamplePosition);
+    vec4 head = texelFetch(head_img, pos, 0);
     head.a = colorToAlpha(head, c);
 
     // If we have neighboring pixels that are green, blend to alpha.
     float acc = 0;
-    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2( 1, 0), 0), c) > .99 ? 0 : 1;
-    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2( 1, 1), 0), c) > .99 ? 0 : 1;
-    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2( 0, 1), 0), c) > .99 ? 0 : 1;
-    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2(-1, 1), 0), c) > .99 ? 0 : 1;
-    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2(-1,-0), 0), c) > .99 ? 0 : 1;
-    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2(-1,-1), 0), c) > .99 ? 0 : 1;
-    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2(-0,-1), 0), c) > .99 ? 0 : 1;
-    acc += colorToAlpha(texelFetch(inputFile, pos+ivec2(-1,-1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2( 1, 0), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2( 1, 1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2( 0, 1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2(-1, 1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2(-1,-0), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2(-1,-1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2(-0,-1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2(-1,-1), 0), c) > .99 ? 0 : 1;
     if (acc > 1.8) {
         head.a -= head.g;
     }
@@ -64,7 +120,7 @@ glsl vec4 head_color(ivec2 pos) {
     return head;
 }
 
-image Head = glsl(head_color, sizeof(inputFile));
+image Head = glsl(head_color, sizeof(head_img));
 
 glsl vec4 blend(vec4 x, vec4 y) {
     return vec4(lerp(x.rgb, y.rgb, y.a), clamp01(x.a + y.a));
@@ -74,21 +130,27 @@ glsl vec4 blend(vec4 x, vec4 y) {
     // return vec4(lerp(x.rgb, y.rgb, y.a/(x.a + y.a)), clamp01(x.a + y.a));
 }
 
+vec2 perturb(vec2 pos) {
+    pos += .03*value_noise_and_derivative(vec3(pos*1.1, .1)).yz;
+    return pos;
+}
 
 glsl vec4 xmas_card(vec2 pos, float time) {
     time = mod(time, period);
     float t = time / period;
-    float theta = time * TAU;
+    float theta = t * TAU;
 
     vec2 orbit = .005 * vec2(1, .2) *  vec2(cos(wiggle_speed * theta), sin(wiggle_speed * theta));
 
     // painter's algorithm
     vec4 c = vec4(0);
     c = blend(c, texture(background, .99*orbit + pos));
-    c = blend(c, texture(tileable_snow, .3*orbit + pos + t*vec2(1, 2)));
-    c = blend(c, texture(Head, .2*orbit + pos + vec2(head_shift, 0)));
-    c = blend(c, texture(tileable_snow, .1*orbit + pos + (t+.335)*vec2(-1, 2)));
+    c = blend(c, texture(tileable_snow, .6*orbit + perturb(pos) + t*vec2(1, 2)));
+    c = blend(c, texture(Head, .4*orbit + pos + vec2(head_shift, 0)));
+    c = blend(c, texture(tileable_snow, .2*orbit + perturb(pos+1) + (t+.735)*vec2(-1, 2)));
+    c = blend(c, texture(text_img, .0*orbit + pos));
     return c;
 }
-animation XmasCard = glsl(xmas_card, sizeof(inputFile));
+animation XmasCard = glsl(xmas_card, sizeof(head_img) *720/1080);
+export png_sequence(XmasCard, "frames/frame_????.png", 30, period);
 
