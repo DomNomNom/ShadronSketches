@@ -16,3 +16,5 @@ exportTools\ffmpeg -framerate 30 -i frames/frame_%02d.png -s:v 1233x906 -c:v lib
 exportTools\ffmpeg -i frames/frame_%03d.png -pix_fmt rgb24 out.gif
 
 exportTools\ffmpeg -framerate 30 -start_number 271 -i frames/unused/frame_%04d.png -s:v 1280x720 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p out.mp4
+
+exportTools\ffmpeg -framerate 30 -i frames/frame_%04d.png -s:v 1280x720 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p out.mp4

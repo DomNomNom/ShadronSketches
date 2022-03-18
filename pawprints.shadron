@@ -1,0 +1,242 @@
+#version 450
+
+#include "library/lerp.shadron"
+#include "library/colorSpaces.shadron"
+#include "library/complexNumbers.shadron"
+
+param float displacement_amount = .7: range(0, .1);
+param float trail_scale = 6 : range(10);
+param vec2 trail_separation;
+param vec4 trail_placement;
+param vec4 trail_placement2;
+
+
+vec3 hash( vec3 p ) // replace this by something better. really. do
+{
+    p = vec3( dot(p,vec3(127.1,311.7, 74.7)),
+              dot(p,vec3(269.5,183.3,246.1)),
+              dot(p,vec3(113.5,271.9,124.6)));
+
+    return -1.0 + 2.0*fract(sin(p)*43758.5453123);
+}
+
+// return value noise (in x) and its derivatives (in yzw)
+vec4 value_noise_and_derivative( in vec3 x )
+{
+    // grid
+    vec3 i = floor(x);
+    vec3 w = fract(x);
+
+    #if 1
+    // quintic interpolant
+    vec3 u = w*w*w*(w*(w*6.0-15.0)+10.0);
+    vec3 du = 30.0*w*w*(w*(w-2.0)+1.0);
+    #else
+    // cubic interpolant
+    vec3 u = w*w*(3.0-2.0*w);
+    vec3 du = 6.0*w*(1.0-w);
+    #endif
+
+    // gradients
+    vec3 ga = hash( i+vec3(0.0,0.0,0.0) );
+    vec3 gb = hash( i+vec3(1.0,0.0,0.0) );
+    vec3 gc = hash( i+vec3(0.0,1.0,0.0) );
+    vec3 gd = hash( i+vec3(1.0,1.0,0.0) );
+    vec3 ge = hash( i+vec3(0.0,0.0,1.0) );
+    vec3 gf = hash( i+vec3(1.0,0.0,1.0) );
+    vec3 gg = hash( i+vec3(0.0,1.0,1.0) );
+    vec3 gh = hash( i+vec3(1.0,1.0,1.0) );
+
+    // projections
+    float va = dot( ga, w-vec3(0.0,0.0,0.0) );
+    float vb = dot( gb, w-vec3(1.0,0.0,0.0) );
+    float vc = dot( gc, w-vec3(0.0,1.0,0.0) );
+    float vd = dot( gd, w-vec3(1.0,1.0,0.0) );
+    float ve = dot( ge, w-vec3(0.0,0.0,1.0) );
+    float vf = dot( gf, w-vec3(1.0,0.0,1.0) );
+    float vg = dot( gg, w-vec3(0.0,1.0,1.0) );
+    float vh = dot( gh, w-vec3(1.0,1.0,1.0) );
+
+    // interpolations
+    return vec4( va + u.x*(vb-va) + u.y*(vc-va) + u.z*(ve-va) + u.x*u.y*(va-vb-vc+vd) + u.y*u.z*(va-vc-ve+vg) + u.z*u.x*(va-vb-ve+vf) + (-va+vb+vc-vd+ve-vf-vg+vh)*u.x*u.y*u.z,    // value
+                 ga + u.x*(gb-ga) + u.y*(gc-ga) + u.z*(ge-ga) + u.x*u.y*(ga-gb-gc+gd) + u.y*u.z*(ga-gc-ge+gg) + u.z*u.x*(ga-gb-ge+gf) + (-ga+gb+gc-gd+ge-gf-gg+gh)*u.x*u.y*u.z +   // derivatives
+                 du * (vec3(vb,vc,ve) - va + u.yzx*vec3(va-vb-vc+vd,va-vc-ve+vg,va-vb-ve+vf) + u.zxy*vec3(va-vb-ve+vf,va-vb-vc+vd,va-vc-ve+vg) + u.yzx*u.zxy*(-va+vb+vc-vd+ve-vf-vg+vh) ));
+}
+
+
+// image head_img = file() : map(clamp);
+image beans_distance_img = file() : map(repeat);
+image background = file() : map(clamp);
+// image tileable_snow = file() : map(repeat);
+// image text_img = file() : map(repeat);
+
+param vec2 headGreenSamplePosition = vec2(0.9, 0.5) : hidden();// range(0, 1);
+param float head_alpha_bias = 0.9 : hidden();//, range(0, 1);
+
+// param float head_shift = .7;
+
+param float period = 10.0: range(0, 10);
+param int wiggle_speed = 2 : range(0, 10);
+
+glsl vec4 orange = vec4(1,.5,0,1);
+
+glsl float colorToAlpha(vec4 color, vec4 zeroAlphaColor) {
+    float dist;
+
+    // RGB distance
+    // dist = distance(zeroAlphaColor.rgb, input.rgb);
+
+    // // HSV distance
+    // vec3 hsv_alpha = rgb2hsv(zeroAlphaColor.rgb);
+    // vec3 hsv_input = rgb2hsv(input.rgb);
+    // float hueDiff = min(
+    //     abs(    hsv_alpha.x             -     hsv_input.x            ),
+    //     abs(mod(hsv_alpha.x + 0.5, 1.0) - mod(hsv_input.x + 0.5, 1.0))
+    // );
+    // float valueDiff = abs(hsv_alpha.z - hsv_input.z);
+    // // dist = valueDiff;
+    // // dist = hueDiff;
+    // dist = lerp(valueDiff, hueDiff, hsv_input.y);
+
+    // YUV distance. This is more accurate to the human eye.
+    dist = distance(rgb2yuv(zeroAlphaColor.rgb), rgb2yuv(color.rgb));
+    return applyBias(dist, head_alpha_bias);
+}
+
+
+glsl vec4 head_color(ivec2 pos) {
+    vec4 c = texture(head_img, headGreenSamplePosition);
+    vec4 head = texelFetch(head_img, pos, 0);
+    head.a = colorToAlpha(head, c);
+
+    // If we have neighboring pixels that are green, blend to alpha.
+    float acc = 0;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2( 1, 0), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2( 1, 1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2( 0, 1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2(-1, 1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2(-1,-0), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2(-1,-1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2(-0,-1), 0), c) > .99 ? 0 : 1;
+    acc += colorToAlpha(texelFetch(head_img, pos+ivec2(-1,-1), 0), c) > .99 ? 0 : 1;
+    if (acc > 1.8) {
+        head.a -= head.g;
+    }
+
+    return head;
+}
+
+// image Head = glsl(head_color, sizeof(head_img));
+
+glsl vec4 blend(vec4 x, vec4 y) {
+    return vec4(lerp(x.rgb, y.rgb, y.a), clamp01(x.a + y.a));
+    // return vec4(0.5*(lerp(x.rgb, y.rgb, 1-x.a) + lerp(x.rgb, y.rgb, y.a)), clamp01(x.a + y.a));
+    // return vec4(lerp(x.rgb, y.rgb, 1-x.a), clamp01(x.a + y.a));
+    // return vec4(lerp(x.rgb, y.rgb, y.a), 1/(1/x.a + 1/y.a));
+    // return vec4(lerp(x.rgb, y.rgb, y.a/(x.a + y.a)), clamp01(x.a + y.a));
+}
+
+vec2 perturb(vec2 pos) {
+    pos += .03*value_noise_and_derivative(vec3(pos*1.1, .1)).yz;
+    return pos;
+}
+vec2 rotate(vec2 pos, float t) {
+    return pos * mat2(cos(t), -sin(t),
+                sin(t), cos(t));
+}
+
+float paw_size(float t) {
+    float x = sin(t * 2*PI / period);
+
+    return applyBias(x*x, .7);
+}
+
+vec2 get_displacement(vec2 pos, vec4 trail_placement, float time) {
+
+    // float bean_distance = 0;
+    // for (int dx=-1; dx<=1; ++dx) {
+    //     for (int dy=-1; dy<=1; ++dy) {
+    //         bean_distance = texture(beans_distance_img, pos + 10*vec2(dx, dy) * (1/sizeof(beans_distance_img))).r;
+    //     }
+    // }
+
+    // // painter's algorithm
+    //  // bean_distance = texture(beans_distance_img, pos).r;
+    // vec2 displacement = vec2(
+    //     dFdxFine(bean_distance),
+    //     dFdyFine(bean_distance)
+    // );
+    pos -= trail_placement.xy;
+    pos = rotate(pos, 2*PI*trail_placement.z);
+    pos *= trail_scale;
+    vec2 unshifted_pos = pos;
+    pos.y += floor(pos.x) * .5*(1+trail_separation.y);
+    if (pos.x < 0 || pos.x > 2) return vec2(0);
+    pos.y = mod(pos.y, 1+trail_separation.y);
+    if (pos.y > 1) return vec2(0);
+
+    vec2 displacement = vec2(0);
+    int r = 2;
+    for (int dx=-r; dx<=r; ++dx) {
+        for (int dy=-r; dy<=r; ++dy) {
+            if (dx==0 && dy ==0) continue;
+            displacement += normalize(vec2(dx,dy)) * texture(
+                beans_distance_img,
+                pos + 2*vec2(dx, dy) * (1./sizeof(beans_distance_img))
+            ).r;
+        }
+    }
+
+    displacement = length(displacement) > 0? normalize(displacement) : vec2(0);
+    displacement *= 1;
+    displacement *= displacement_amount;
+
+    float thresh = texture(beans_distance_img, pos).r - paw_size(
+        time - .5*unshifted_pos.y + period*trail_placement.w
+    );
+
+    if (thresh < 0) displacement = vec2(0);
+    displacement *= thresh;
+    // displacement *= 1-bean_distance;
+
+    return displacement;
+}
+
+param vec4 glitch;
+
+glsl vec4 xmas_card(vec2 pos, float time) {
+
+
+    time = mod(time, period);
+    float t = time / period;
+    float theta = t * TAU;
+
+    vec3 h = hash(vec3(time, time+period*1, time+period*2));
+    vec3 h2 = hash(h);
+    if (
+        h.x < pos.y && pos.y < h.x+h.y*glitch.y &&
+        h.z < pos.x && pos.x < h.z+h2.z*glitch.x
+    ) {
+        pos = fract(pos + glitch.zw * (2*h2.xy - 1));
+    }
+
+    vec2 orbit = .005 * vec2(1, .2) *  vec2(cos(wiggle_speed * theta), sin(wiggle_speed * theta));
+    orbit *= 0;
+
+    vec2 displacement = get_displacement(pos, trail_placement, time);
+    displacement += get_displacement(pos, trail_placement2, time);
+    vec4 c = vec4(0);
+    c = blend(c, texture(background, .99*orbit + pos + displacement));
+    // if (length(displacement) > 0) c.rgb *= .5;
+
+    // c = blend(c, texture(tileable_snow, .6*orbit + perturb(pos) + t*vec2(1, 2)));
+    // c = blend(c, texture(Head, .4*orbit + pos + vec2(head_shift, 0)));
+    // c = blend(c, texture(tileable_snow, .2*orbit + perturb(pos+1) + (t+.735)*vec2(-1, 2)));
+    // c = blend(c, texture(text_img, .0*orbit + pos));
+    return c;
+}
+
+// glsl vec4 glitch_card()
+animation XmasCard = glsl(xmas_card, sizeof(background));
+export png_sequence(XmasCard, "frames/frame_????.png", 30, period);
+
