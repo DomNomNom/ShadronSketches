@@ -11,10 +11,10 @@ exportTools\ffmpeg -framerate 30 -i frames/frame_%02d.png -s:v 512x512 -c:v libx
 exportTools\ffmpeg -framerate 30 -i frames/frame_%04d.png -s:v 1194x686 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p out.mp4
 exportTools\ffmpeg -framerate 30 -i frames/frame_%02d.png -s:v 1233x906 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p out.mp4
 
+exportTools\ffmpeg -framerate 30 -start_number 271 -i frames/unused/frame_%04d.png -s:v 1280x720 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p out.mp4
+exportTools\ffmpeg -framerate 30 -i frames/frame_%04d.png -s:v 1280x720 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p out.mp4
+
 // GIF
 // https://stackoverflow.com/questions/3688870/create-animated-gif-from-a-set-of-jpeg-images
-exportTools\ffmpeg -i frames/frame_%03d.png -pix_fmt rgb24 out.gif
-
-exportTools\ffmpeg -framerate 30 -start_number 271 -i frames/unused/frame_%04d.png -s:v 1280x720 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p out.mp4
-
-exportTools\ffmpeg -framerate 30 -i frames/frame_%04d.png -s:v 1280x720 -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p out.mp4
+exportTools\ffmpeg -i frames/frame_%02d.png -pix_fmt rgb24 out.gif
+exportTools\ffmpeg -framerate 50 -i frames/frame_%03d.png -vf "fps=50,scale=900:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" -y out.gif

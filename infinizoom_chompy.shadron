@@ -1,0 +1,62 @@
+// https://www.shadertoy.com/view/ftscR4
+#include "library/loopAnimation.shadron"
+param float animationPeriod = 1 : logrange(0.1, 60);
+param float animationSmoothingRatio = 0.1 : range(0, 1);
+
+param float spatial_thickness = .088;
+param float aspect_ratio = 2.55;
+param float spatial_density = .45;
+
+
+
+float transform_r(float r, float time) {
+    r = log(r);
+    r *= spatial_density;
+    r += -time / animationPeriod;
+    return r;
+}
+
+vec4 mainImage2(vec2 uv, float time) {
+    // Normalized pixel coordinates (from 0 to 1)
+    // vec2 uv = fragCoord/iResolution.xy;
+    uv -= .5;
+    uv *= 2.;
+    uv = abs(uv);
+    uv.x *= shadron_Aspect;
+
+    // Time varying pixel color
+    vec3 col = vec3(0, 1, 73.3/100.);
+
+    float r1 = dot(uv, normalize(vec2(1, aspect_ratio)));
+    float r2 = dot(uv, normalize(vec2(aspect_ratio, 1)));
+
+    r1 = transform_r(r1, time);
+    r2 = transform_r(r2, time);
+    r2 -= .5;
+
+    if (mod(r1, 1.) > 1.-spatial_thickness) { col = vec3(0.); }
+    if (mod(r2, 1.) > 1.-spatial_thickness) { col = vec3(0.); }
+
+    return vec4(col, 1);
+}
+
+vec2 random(vec3 pos){
+    float x = fract(sin(dot(pos, vec3(64.25375463, 23.27536534, 86.29678483))) * 59482.7542);
+    float y = fract(sin(dot(pos, vec3(86.28594852, 34.58198637, 25.58228349))) * 95837.9672);
+    return vec2(x, y);
+}
+
+
+glsl vec4 mainImage(vec2 uv, float time) {
+    vec4 col = vec4(0);
+    int sample_count = 50;
+    for (int i=0; i<sample_count; ++i) {
+        col += mainImage2(uv + shadron_PixelSize * random(vec3(uv, i)), time);
+    }
+    col /= float(sample_count);
+
+    return col;
+}
+
+animation Animation = glsl(loopAnimaionSmoothly<mainImage, animationPeriod, animationSmoothingRatio>, 1.5*600, 1.5*240);
+export png_sequence(Animation, "frames/frame_?.png", 60, animationPeriod);
